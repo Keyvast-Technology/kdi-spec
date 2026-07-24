@@ -1,0 +1,28 @@
+{
+  "schema": "keyvast.instrument/1",
+  "kdi": "0.1",
+  "compatible": "keyvast-a75",
+  "gateware": {
+    "git_sha": "software",
+    "build_unix": 0,
+    "dirty": false
+  },
+  "artifacts": [
+    {
+      "name": "descriptor.json",
+      "size": 6234,
+      "checksum": "sha256:ac1150f52d66a9d038669b72c136bee7f9189c24cd29fbdb4e3f4b3c52aeb5ac"
+    },
+    {
+      "name": "schema.json",
+      "size": 2295,
+      "checksum": "sha256:e4be9092461fbce16b0a8c9a9e85e997fe043624d3b1ecbc8fd7d0bccfcb4eef"
+    }
+  ],
+  "conformance": {
+    "status": "pass",
+    "passed": 11,
+    "total": 11
+  },
+  "kdi_release": "0.0.1"
+}

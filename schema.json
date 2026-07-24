@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://keyvast.dev/kdi/descriptor.schema.json",
+  "title": "Keyvast Device Interface descriptor",
+  "type": "object",
+  "required": [
+    "kdi",
+    "device",
+    "caps",
+    "identity_registers",
+    "fastpath_registers",
+    "streams",
+    "commands",
+    "bindings"
+  ],
+  "properties": {
+    "kdi": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$"
+    },
+    "device": {
+      "type": "object",
+      "required": [
+        "vendor",
+        "type",
+        "impl_version",
+        "compatible"
+      ]
+    },
+    "caps": {
+      "type": "object"
+    },
+    "identity_registers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "access"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "access": {
+            "enum": [
+              "ro",
+              "rw"
+            ]
+          }
+        }
+      }
+    },
+    "fastpath_registers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "access"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "access": {
+            "enum": [
+              "ro",
+              "rw"
+            ]
+          }
+        }
+      }
+    },
+    "streams": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "channels",
+          "sample_bits",
+          "header",
+          "bytes_per_frame"
+        ]
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "safety"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "public",
+              "service",
+              "factory"
+            ]
+          },
+          "safety": {
+            "enum": [
+              "ro",
+              "attended",
+              "raw",
+              "bringup",
+              "unsafe"
+            ]
+          }
+        }
+      }
+    },
+    "bindings": {
+      "type": "object"
+    }
+  }
+}

@@ -1,0 +1,292 @@
+{
+  "kdi": "0.1",
+  "device": {
+    "vendor": "keyvast",
+    "type": "a75",
+    "impl_version": 1,
+    "compatible": "keyvast-a75"
+  },
+  "caps": {
+    "0": "clean_frame",
+    "1": "command_protocol",
+    "2": "ddr3",
+    "3": "adio",
+    "4": "grounding",
+    "5": "ttl_in",
+    "6": "slot_health",
+    "7": "field_update"
+  },
+  "identity_registers": [
+    {
+      "name": "magic",
+      "access": "ro",
+      "doc": "0x4B444931 = 'KDI1'"
+    },
+    {
+      "name": "contract_version",
+      "access": "ro",
+      "doc": "[31:16] major [15:0] minor"
+    },
+    {
+      "name": "board_id",
+      "access": "ro"
+    },
+    {
+      "name": "caps",
+      "access": "ro"
+    },
+    {
+      "name": "gateware_sha",
+      "access": "ro",
+      "doc": "low 32 bits of the git sha (id_core)"
+    },
+    {
+      "name": "dna",
+      "access": "ro",
+      "doc": "FPGA DNA low 32 bits (per-unit binding hint, NOT a key)"
+    },
+    {
+      "name": "cpu_heartbeat",
+      "access": "ro",
+      "doc": "increments while the control CPU is alive"
+    },
+    {
+      "name": "contract_ready",
+      "access": "ro",
+      "doc": "1 once boot + DDR calibration complete (poll after connect)"
+    }
+  ],
+  "fastpath_registers": [
+    {
+      "name": "run",
+      "access": "rw",
+      "doc": "1 = acquiring"
+    },
+    {
+      "name": "occupancy",
+      "access": "ro",
+      "units": "frames",
+      "doc": "frames resident, ready to read"
+    },
+    {
+      "name": "overflow",
+      "access": "ro",
+      "doc": "sticky: a frame was dropped"
+    },
+    {
+      "name": "frame_counter",
+      "access": "ro",
+      "doc": "total frames produced this run"
+    },
+    {
+      "name": "data_ready",
+      "access": "ro",
+      "doc": "1 = safe to acquire (== contract_ready for the data plane)"
+    }
+  ],
+  "streams": {
+    "samples": {
+      "byte_order": "little",
+      "channels": 32,
+      "sample_bits": 16,
+      "rate_hz": 30000,
+      "header": [
+        {
+          "name": "magic",
+          "type": "u32",
+          "value": 1178883659
+        },
+        {
+          "name": "format",
+          "type": "u16",
+          "value": 1
+        },
+        {
+          "name": "frame_bytes",
+          "type": "u16"
+        },
+        {
+          "name": "timestamp",
+          "type": "u64"
+        }
+      ],
+      "body": {
+        "name": "amplifier",
+        "layout": "channel-major u16, channels ascending"
+      },
+      "doc": "bytes_per_frame is computed by the generator; hosts look it up, never derive it.",
+      "bytes_per_frame": 80
+    }
+  },
+  "bindings": {
+    "udp": {
+      "binding_version": "0.1",
+      "discover": "broadcast",
+      "note": "software reference transport; names are the wire (identity map)."
+    },
+    "usb3": {
+      "binding_version": "0.1",
+      "discover": "device-list(serial,model)",
+      "reg": {
+        "contract_version": "wireout:0x35",
+        "caps": "wireout:0x36",
+        "gateware_sha": "wireout:0x37",
+        "contract_ready": "wireout:0x31.1",
+        "run": "wirein:0x00.1",
+        "occupancy": "wireout:0x20",
+        "overflow": "wireout:0x31.0"
+      },
+      "stream": {
+        "samples": "okBTPipeOut:0xa0"
+      },
+      "message": {
+        "channel": "vuart",
+        "shared_with": "human-console",
+        "req_tag": "kdi ",
+        "resp_sentinel": "0x1e"
+      }
+    }
+  },
+  "commands": [
+    {
+      "name": "sys.hello",
+      "tier": "public",
+      "safety": "ro",
+      "args": [],
+      "returns": {
+        "proto": "u8",
+        "cmdset": "str",
+        "kdi": "str",
+        "board_id": "u32",
+        "dna": "str",
+        "gateware_sha": "str"
+      },
+      "doc": "Handshake. Also readable via the identity registers pre-boot."
+    },
+    {
+      "name": "power.status",
+      "tier": "public",
+      "safety": "ro",
+      "args": [],
+      "returns": {
+        "rail": "bool",
+        "present": "u8"
+      },
+      "worst_ms": 50,
+      "doc": "Read the power tree. present = bitmask of seated modules."
+    },
+    {
+      "name": "power.up",
+      "tier": "public",
+      "safety": "attended",
+      "args": [],
+      "returns": {
+        "ok": "bool",
+        "present": "u8"
+      },
+      "errors": [
+        "i2c_nak",
+        "no_device"
+      ],
+      "worst_ms": 1400,
+      "doc": "Run the rail sequence. Stim stays off. Level-set: safe to retry."
+    },
+    {
+      "name": "adio.mode",
+      "tier": "public",
+      "safety": "attended",
+      "args": [
+        {
+          "name": "slot",
+          "type": "u8",
+          "max": 7
+        },
+        {
+          "name": "ch1",
+          "type": "enum",
+          "of": [
+            "off",
+            "in",
+            "out",
+            "adc",
+            "dac"
+          ]
+        },
+        {
+          "name": "ch2",
+          "type": "enum",
+          "of": [
+            "off",
+            "in",
+            "out",
+            "adc",
+            "dac"
+          ]
+        }
+      ],
+      "returns": {
+        "slot": "u8",
+        "ch_mode": "u16"
+      },
+      "errors": [
+        "not_present",
+        "no_ip"
+      ],
+      "doc": "Set a slot's two channel modes (I2C mux + CH_MODE, kept coherent)."
+    },
+    {
+      "name": "adio.adc",
+      "tier": "public",
+      "safety": "ro",
+      "args": [
+        {
+          "name": "slot",
+          "type": "u8",
+          "max": 7
+        },
+        {
+          "name": "ch",
+          "type": "u8",
+          "max": 1
+        },
+        {
+          "name": "n",
+          "type": "u8",
+          "min": 1,
+          "max": 16,
+          "optional": true,
+          "default": 1
+        }
+      ],
+      "returns": {
+        "slot": "u8",
+        "ch": "u8",
+        "codes": "u16[]"
+      },
+      "errors": [
+        "not_present",
+        "no_ip"
+      ],
+      "worst_ms": 5,
+      "doc": "n is range-checked, never silently clamped."
+    },
+    {
+      "name": "adio.dacsweep",
+      "tier": "public",
+      "safety": "bringup",
+      "args": [
+        {
+          "name": "slot",
+          "type": "u8",
+          "max": 7
+        }
+      ],
+      "returns": {
+        "slot": "u8",
+        "sweep": "obj[]"
+      },
+      "worst_ms": 400,
+      "doc": "BRING-UP ONLY. May vanish in any release; not frozen."
+    }
+  ]
+}
