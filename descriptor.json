@@ -169,11 +169,11 @@
       "safety": "ro",
       "args": [],
       "returns": {
-        "rail": "bool",
-        "present": "u8"
+        "present": "u8",
+        "reverify": "bool"
       },
       "worst_ms": 50,
-      "doc": "Read the power tree. present = bitmask of seated modules."
+      "doc": "Read the power tree, writing nothing. present = module-present bitmask from the most recent sequence pass (a raw detect read is NOT equivalent \u2014 after a pass those bits are outputs driving the DCDC enables). reverify = the periodic re-verify thread is enabled.\n"
     },
     {
       "name": "power.up",
@@ -261,32 +261,15 @@
       "returns": {
         "slot": "u8",
         "ch": "u8",
-        "codes": "u16[]"
+        "codes": "u16[]",
+        "valid": "bool[]"
       },
       "errors": [
         "not_present",
         "no_ip"
       ],
       "worst_ms": 5,
-      "doc": "n is range-checked, never silently clamped."
-    },
-    {
-      "name": "adio.dacsweep",
-      "tier": "public",
-      "safety": "bringup",
-      "args": [
-        {
-          "name": "slot",
-          "type": "u8",
-          "max": 7
-        }
-      ],
-      "returns": {
-        "slot": "u8",
-        "sweep": "obj[]"
-      },
-      "worst_ms": 400,
-      "doc": "BRING-UP ONLY. May vanish in any release; not frozen."
+      "doc": "n is range-checked, never silently clamped (the human `kv adio adc` clamps). valid[i] mirrors each sample's valid bit \u2014 a code with valid=false is meaningless.\n"
     }
   ]
 }
