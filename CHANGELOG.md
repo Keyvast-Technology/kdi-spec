@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.1.1 — CORRECTION: rhd_matrix row order was off by one
+
+**v0.1.0 published a wrong row order. If you built a decoder against it, fix this first.**
+
+v0.1.0 said *"rows 0..31 are amplifier channels in ascending order, rows 32..34 are the chip's
+three aux results"*. That is wrong in the most dangerous way available: a host implementing it
+reads channel *n* at row *n* and gets **channel n-1**, with row 0 pure garbage — plausible-looking
+neural data at the wrong index, with a valid CRC and correct lengths.
+
+The RHD SPI returns a command's result during the **next** command, so row *k* carries the capture
+from command *k-1*. The actual content of an `rhd_matrix` section is:
+
+| row | content |
+|---|---|
+| 0 | the **previous** timestep's aux2 (aux_adc) — it lags |
+| 1..32 | amplifier channels 0..31, ascending |
+| 33, 34 | this timestep's aux0 (temp) and aux1 (supply) |
+
+This is the hardware, not a choice, and it was already documented in the RTL: an earlier revision
+shipped the un-rotated version once and a real RHD2132's ROM/ID answers missed their expected slots
+at every MISO delay. Static-MISO simulations cannot see it.
+
+No wire bytes change — only the published meaning of the rows. `format` stays 2 and the golden
+vector is unaffected (it carries a digital section, not an rhd_matrix one).
+
+
 ## v0.1.0 — frame format 2: the self-describing container
 
 **Wire-visible: the frame format changes completely. Format 1 frames no longer decode.**

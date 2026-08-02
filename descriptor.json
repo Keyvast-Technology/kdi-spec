@@ -219,7 +219,7 @@
               "type": "u1"
             }
           ],
-          "doc": "ADIO digital INPUT levels, one lane per physical line, bit-packed: 16 lines cost one word and every bit is named by its own lane id, so no host needs a slot->bit formula. LEVELS, not edges: each row is the pin level sampled once per row, so a pulse shorter than one row period can be missed entirely and an edge is located only to +-1 row. SAMPLE INSTANT, derived from RTL and NOT bench-measured: the shipping gateware samples these lines when it emits the tail of the frame, NOT at the frame's timestamp instant, so the level trails its own timestamp by up to one frame period and the offset VARIES with the enabled lane count (keyvast-fpga issue #76). Do not treat the frame timestamp as the edge time. A future emitter latches at frame start and this note tightens.\n"
+          "doc": "ADIO digital INPUT levels, one lane per physical line, bit-packed: 16 lines cost one word and every bit is named by its own lane id, so no host needs a slot->bit formula. LEVELS, not edges: each row is the pin level sampled once per row, so a pulse shorter than one row period can be missed entirely and an edge is located only to +-1 row. SAMPLE INSTANT: the level is latched at FRAME START, so it belongs to the frame's own timestamp instant (keyvast-fpga #76, fixed). Derived from RTL and sim, NOT yet bench-measured. The residual error is the pin-to-latch synchroniser delay, which is a hardware measurement that has not been made \u2014 do not assume a tolerance. Note this is the SAMPLE instant, not an edge time: levels are still sampled once per row, so a pulse shorter than one row period can be missed and an edge is located only to +-1 row.\n"
         },
         {
           "code": 32,
@@ -235,7 +235,7 @@
               "midpoint": 32768
             }
           ],
-          "doc": "One RHD acquisition lane per lane id; rows 0..31 are amplifier channels in ascending order, rows 32..34 are the chip's three aux results (temp, supply, aux_adc). Amplifier codes are offset binary around 0x8000, NOT two's complement. The volts-per-code scale is a property of the chip profile and is deliberately NOT published here: a profile swap is a MAJOR bump a host must refuse to bind, never silently rescale.\n"
+          "doc": "One RHD acquisition lane per lane id. ROW ORDER IS ROTATED BY ONE and this is a property of the hardware, not a choice: the RHD SPI returns a command's result during the NEXT command, so row k carries the capture from command k-1 (RhdCore.scala:218-225, hardware-caught in PR #15). Concretely:\n  row 0        the PREVIOUS timestep's aux2 (aux_adc) \u2014 note the lag\n  rows 1..32   amplifier channels 0..31, ascending\n  rows 33,34   this timestep's aux0 (temp) and aux1 (supply)\nA host that assumes rows 0..31 are the amplifier reads channel n at row n and gets channel n-1, with row 0 pure garbage \u2014 plausible-looking neural data at the wrong index, which is exactly the failure PR #15 shipped once already. Amplifier codes are offset binary around 0x8000, NOT two's complement. The volts-per-code scale is a property of the chip profile and is deliberately NOT published here: a profile swap is a MAJOR bump a host must refuse to bind, never silently rescale.\n"
         }
       ],
       "stream_id_blocks": [

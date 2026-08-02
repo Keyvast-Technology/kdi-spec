@@ -10,8 +10,8 @@
   "artifacts": [
     {
       "name": "descriptor.json",
-      "size": 15111,
-      "checksum": "sha256:a3605fa8986cb2f1629ea73bb2ba3043d0cfc8ecb95c95f88645100898e014fb"
+      "size": 15751,
+      "checksum": "sha256:057d4418fb5306e601cf857277b057eb4308f93f9823a69d85eca0b6cb8c9bb6"
     },
     {
       "name": "schema.json",
@@ -24,7 +24,7 @@
     "passed": 12,
     "total": 12
   },
-  "kdi_release": "0.1.0",
+  "kdi_release": "0.1.1",
   "frame_format": 2,
   "data_plane": "NOT emitted by any shipping gateware; clean_frame capability is clear"
 }

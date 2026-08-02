@@ -4,7 +4,7 @@ This repository is the **public contract** for the Keyvast acquisition instrumen
 the machine-readable descriptor, its JSON Schema, golden vectors, and a manifest —
 everything a host needs to talk to the device, in any language, over any transport.
 
-> **Status: v0.1.0 — frame format 2 pinned, NOT YET EMITTED BY GATEWARE.**
+> **Status: v0.1.1 — frame format 2 pinned, NOT YET EMITTED BY GATEWARE.**
 > The contract, its codec and its vectors are complete and proven in software, and the
 > control plane is hardware-verified on the bench. The **data plane is not**: no shipping
 > bitstream emits format 2 yet, and the device correspondingly leaves the `clean_frame`
