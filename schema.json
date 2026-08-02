@@ -75,12 +75,39 @@
     "streams": {
       "type": "object",
       "additionalProperties": {
-        "type": "object",
-        "required": [
-          "channels",
-          "sample_bits",
-          "header",
-          "bytes_per_frame"
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "direction",
+              "implemented",
+              "frame_format",
+              "header",
+              "descriptor",
+              "kinds",
+              "invariants",
+              "timebase",
+              "max_frame_bytes"
+            ],
+            "properties": {
+              "implemented": {
+                "const": true
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "direction",
+              "implemented",
+              "frame_format"
+            ],
+            "properties": {
+              "implemented": {
+                "const": false
+              }
+            }
+          }
         ]
       }
     },

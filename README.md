@@ -4,9 +4,14 @@ This repository is the **public contract** for the Keyvast acquisition instrumen
 the machine-readable descriptor, its JSON Schema, golden vectors, and a manifest —
 everything a host needs to talk to the device, in any language, over any transport.
 
-> **Status: v0.0.1 — software reference (pre-bitstream).** The contract and its
-> reference implementation are proven end-to-end in software; the FPGA binding
-> follows. This is generated output; the source lives in a separate repo.
+> **Status: v0.1.0 — frame format 2 pinned, NOT YET EMITTED BY GATEWARE.**
+> The contract, its codec and its vectors are complete and proven in software, and the
+> control plane is hardware-verified on the bench. The **data plane is not**: no shipping
+> bitstream emits format 2 yet, and the device correspondingly leaves the `clean_frame`
+> capability bit CLEAR — so a host that requires the clean frame will correctly refuse to
+> bind to today's hardware. The format is published now, ahead of the emitter, precisely so
+> that it is fixed before anything binds to it. This is generated output; the source lives
+> in a separate repo.
 
 ## What's here
 
@@ -15,7 +20,7 @@ everything a host needs to talk to the device, in any language, over any transpo
 | `descriptor.json` | **the contract** — device identity, capabilities, the two register drawers, the sample-stream layout, and the public command set. |
 | `schema.json` | JSON Schema (draft 2020-12) — validate a descriptor without our code. |
 | `manifest.json` | sha256 of every artifact + contract/build identity + the conformance result. The only place hashes live. |
-| `vectors/golden_frame.{bin,json}` | a real frame + its expected decode, so a decoder is testable with no hardware. |
+| `vectors/golden_frame.{bin,json}` | a real frame, its expected decode, **and 7 negative frames with the exact reason token each must be rejected with** — so a decoder is testable with no hardware, in both directions. |
 | `CHANGELOG.md` | one entry per contract version; wire-visible changes only. |
 
 ## How to consume it

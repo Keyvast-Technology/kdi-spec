@@ -18,18 +18,9 @@
   },
   "identity_registers": [
     {
-      "name": "magic",
-      "access": "ro",
-      "doc": "0x4B444931 = 'KDI1'"
-    },
-    {
       "name": "contract_version",
       "access": "ro",
       "doc": "[31:16] major [15:0] minor"
-    },
-    {
-      "name": "board_id",
-      "access": "ro"
     },
     {
       "name": "caps",
@@ -39,16 +30,6 @@
       "name": "gateware_sha",
       "access": "ro",
       "doc": "low 32 bits of the git sha (id_core)"
-    },
-    {
-      "name": "dna",
-      "access": "ro",
-      "doc": "FPGA DNA low 32 bits (per-unit binding hint, NOT a key)"
-    },
-    {
-      "name": "cpu_heartbeat",
-      "access": "ro",
-      "doc": "increments while the control CPU is alive"
     },
     {
       "name": "contract_ready",
@@ -65,8 +46,8 @@
     {
       "name": "occupancy",
       "access": "ro",
-      "units": "frames",
-      "doc": "frames resident, ready to read"
+      "units": "words16",
+      "doc": "16-bit words resident anywhere in the pipe buffer, SATURATING at 0xffff (a true 0x10000 would make a 16-bit reader see EMPTY). A liveness/backpressure hint, NOT a frame count and NOT a correctness gate: frames are self-describing, so a host reads, decodes what arrived, and reads again if it wanted more.\n"
     },
     {
       "name": "overflow",
@@ -74,55 +55,306 @@
       "doc": "sticky: a frame was dropped"
     },
     {
-      "name": "frame_counter",
+      "name": "console_tx_drop",
       "access": "ro",
-      "doc": "total frames produced this run"
-    },
-    {
-      "name": "data_ready",
-      "access": "ro",
-      "doc": "1 = safe to acquire (== contract_ready for the data plane)"
+      "doc": "sticky: the device's console/message TX buffer overflowed and DROPPED bytes, so any reply read while this is set may be TRUNCATED. Readable without the CPU, which is the point \u2014 a truncated reply is otherwise indistinguishable from a device that answered short.\n"
     }
   ],
   "streams": {
     "samples": {
+      "direction": "from_device",
+      "implemented": true,
+      "frame_format": 2,
       "byte_order": "little",
-      "channels": 32,
-      "sample_bits": 16,
-      "rate_hz": 30000,
-      "header": [
+      "word_bits": 16,
+      "frozen_prefix": [
         {
           "name": "magic",
+          "offset": 0,
           "type": "u32",
           "value": 1178883659
         },
         {
           "name": "format",
-          "type": "u16",
-          "value": 1
+          "offset": 4,
+          "type": "u16"
         },
         {
-          "name": "frame_bytes",
+          "name": "frame_words",
+          "offset": 16,
+          "type": "u32",
+          "units": "words16"
+        }
+      ],
+      "header": [
+        {
+          "name": "magic",
+          "offset": 0,
+          "type": "u32",
+          "value": 1178883659
+        },
+        {
+          "name": "format",
+          "offset": 4,
+          "type": "u16",
+          "value": 2
+        },
+        {
+          "name": "flags",
+          "offset": 6,
           "type": "u16"
         },
         {
           "name": "timestamp",
+          "offset": 8,
           "type": "u64"
+        },
+        {
+          "name": "frame_words",
+          "offset": 16,
+          "type": "u32",
+          "units": "words16"
+        },
+        {
+          "name": "layout",
+          "offset": 20,
+          "type": "u16"
+        },
+        {
+          "name": "hdr_words",
+          "offset": 22,
+          "type": "u16",
+          "units": "words16"
+        },
+        {
+          "name": "n_sections",
+          "offset": 24,
+          "type": "u16"
+        },
+        {
+          "name": "run_id",
+          "offset": 26,
+          "type": "u16"
+        },
+        {
+          "name": "contract_rev",
+          "offset": 28,
+          "type": "u16"
+        },
+        {
+          "name": "desc_words",
+          "offset": 30,
+          "type": "u16",
+          "units": "words16"
         }
       ],
-      "body": {
-        "name": "amplifier",
-        "layout": "channel-major u16, channels ascending"
+      "descriptor": {
+        "words": 8,
+        "fields": [
+          {
+            "name": "kind",
+            "offset": 0,
+            "type": "u8"
+          },
+          {
+            "name": "dflags",
+            "offset": 1,
+            "type": "u8"
+          },
+          {
+            "name": "n_lanes",
+            "offset": 2,
+            "type": "u16"
+          },
+          {
+            "name": "words_per_lane",
+            "offset": 4,
+            "type": "u16"
+          },
+          {
+            "name": "section_words",
+            "offset": 6,
+            "type": "u16"
+          },
+          {
+            "name": "tick_num",
+            "offset": 8,
+            "type": "u32"
+          },
+          {
+            "name": "tick_den",
+            "offset": 12,
+            "type": "u16"
+          },
+          {
+            "name": "pad",
+            "offset": 14,
+            "type": "u16",
+            "value": 0
+          }
+        ],
+        "element_bits": {
+          "0": 16,
+          "1": 1,
+          "2": 32,
+          "3": 64
+        }
       },
-      "doc": "bytes_per_frame is computed by the generator; hosts look it up, never derive it.",
-      "bytes_per_frame": 80
+      "timebase": {
+        "ticks_per_second": 100000000,
+        "timestamp_bits": 48,
+        "epoch": "run_start",
+        "doc": "ONE free-running counter, sampled per frame by every section, so aligning two streams is exact integer subtraction \u2014 no sync channel and no per-stream linear fit. The frame-to-frame delta JITTERS and that is normal: 100e6/30e3 = 3333.33, so it alternates 3333/3334. There is deliberately NO constant-delta invariant, because at 30 kS/s one is not implementable. Each section reports its own exact cadence as a rational, so a host never needs a nominal rate: RATE IS NEVER NORMATIVE IN THIS CONTRACT, THE TIMEBASE IS. A hardware rate change needs no contract change. The counter is asynchronous to the acquisition clock, so the true jitter bound is a hardware measurement that has NOT been made; do not hardcode a tolerance.\n"
+      },
+      "kinds": [
+        {
+          "code": 16,
+          "name": "adio_dig",
+          "max_lanes": 16,
+          "element_bits": 1,
+          "rows": 1,
+          "row": [
+            {
+              "name": "level",
+              "type": "u1"
+            }
+          ],
+          "doc": "ADIO digital INPUT levels, one lane per physical line, bit-packed: 16 lines cost one word and every bit is named by its own lane id, so no host needs a slot->bit formula. LEVELS, not edges: each row is the pin level sampled once per row, so a pulse shorter than one row period can be missed entirely and an edge is located only to +-1 row. SAMPLE INSTANT, derived from RTL and NOT bench-measured: the shipping gateware samples these lines when it emits the tail of the frame, NOT at the frame's timestamp instant, so the level trails its own timestamp by up to one frame period and the offset VARIES with the enabled lane count (keyvast-fpga issue #76). Do not treat the frame timestamp as the edge time. A future emitter latches at frame start and this note tightens.\n"
+        },
+        {
+          "code": 32,
+          "name": "rhd_matrix",
+          "max_lanes": 32,
+          "element_bits": 16,
+          "rows": 35,
+          "row": [
+            {
+              "name": "sample",
+              "type": "u16",
+              "encoding": "offset_binary",
+              "midpoint": 32768
+            }
+          ],
+          "doc": "One RHD acquisition lane per lane id; rows 0..31 are amplifier channels in ascending order, rows 32..34 are the chip's three aux results (temp, supply, aux_adc). Amplifier codes are offset binary around 0x8000, NOT two's complement. The volts-per-code scale is a property of the chip profile and is deliberately NOT published here: a profile swap is a MAJOR bump a host must refuse to bind, never silently rescale.\n"
+        }
+      ],
+      "stream_id_blocks": [
+        {
+          "block": "0x0000-0x0fff",
+          "name": "rhd",
+          "formula": "slot*16 + unit",
+          "doc": "unit 0..3 of a slot; units 1 and 3 are the DDR subphase, not a second MISO line"
+        },
+        {
+          "block": "0x1000-0x1fff",
+          "name": "adio_digital",
+          "formula": "0x1000 + slot*16 + channel"
+        },
+        {
+          "block": "0x2000-0x2fff",
+          "name": "adio_analog",
+          "formula": "0x2000 + slot*16 + channel"
+        }
+      ],
+      "invariants": [
+        {
+          "id": "alignment",
+          "who": "both",
+          "rule": "frame_words % 4 == 0 and hdr_words % 4 == 0"
+        },
+        {
+          "id": "magic_is_anchor",
+          "who": "host",
+          "rule": "magic is a resync anchor ONLY, never a validity test; validity is CRC + declared length"
+        },
+        {
+          "id": "crc_residue",
+          "who": "host",
+          "rule": "zlib.crc32(whole frame including its trailer) == 0x2144DF1C"
+        },
+        {
+          "id": "section_words",
+          "who": "both",
+          "rule": "section_words == words_per_lane * ceil(n_lanes * element_bits / 16)"
+        },
+        {
+          "id": "desc_stride",
+          "who": "host",
+          "rule": "take the descriptor stride from desc_words on the wire, never a compiled-in constant; reject desc_words < 8; ignore bytes past the fields you know"
+        },
+        {
+          "id": "reserved_reject",
+          "who": "host",
+          "rule": "REJECT (never ignore) a frame with any reserved bit set: flags[15:3], dflags[0], dflags[7:3], descriptor pad, timestamp[63:48]"
+        },
+        {
+          "id": "tick_sane",
+          "who": "both",
+          "rule": "tick_num >= 1 and tick_den >= 1; a zero divides by zero in the loss oracle"
+        },
+        {
+          "id": "first_of_run",
+          "who": "both",
+          "rule": "a frame with flags[0] set has timestamp == 0"
+        },
+        {
+          "id": "lane_ids",
+          "who": "both",
+          "rule": "lane ids ascend and are unique within a section"
+        },
+        {
+          "id": "dup_kinds_ok",
+          "who": "host",
+          "rule": "two sections of the same kind in one frame are LEGAL; a singular accessor must raise, never return the first"
+        },
+        {
+          "id": "unknown_kind",
+          "who": "host",
+          "rule": "skip an unknown kind by section_words; skip an unknown format by frame_words"
+        },
+        {
+          "id": "loss_oracle",
+          "who": "host",
+          "rule": "frames lost between two timestamps = round(dt * tick_den / tick_num) - 1"
+        }
+      ],
+      "error_tokens": [
+        "crc_err",
+        "bad_length",
+        "section_words",
+        "lane_ids",
+        "reserved_bits",
+        "tick_sane",
+        "timestamp_top16",
+        "first_of_run_ts",
+        "desc_words",
+        "hdr_words_fits",
+        "body_fits_frame",
+        "body_shape",
+        "ambiguous_kind",
+        "resync_bytes",
+        "unknown_kind",
+        "format_skipped"
+      ],
+      "max_frame_bytes": 2408
+    },
+    "to_device": {
+      "direction": "to_device",
+      "implemented": false,
+      "frame_format": 2,
+      "doc": "Host -> device bulk stream. RESERVED: no binding maps it and no device implements it yet, so a host MUST NOT attempt to open it. The frame format is the same container.\n"
     }
   },
   "bindings": {
     "udp": {
       "binding_version": "0.1",
       "discover": "broadcast",
-      "note": "software reference transport; names are the wire (identity map)."
+      "note": "software reference transport (datagram); names are the wire (identity map)."
+    },
+    "tcp": {
+      "binding_version": "0.1",
+      "discover": "broadcast",
+      "note": "Stream transport: it frames its own messages (4-byte big-endian length prefix), which is the difference a future ethernet binding faces. This IS that binding's control path; the ethernet data plane would add a PL-MAC stream socket beside it.\n"
     },
     "usb3": {
       "binding_version": "0.1",
@@ -134,7 +366,8 @@
         "contract_ready": "wireout:0x31.1",
         "run": "wirein:0x00.1",
         "occupancy": "wireout:0x20",
-        "overflow": "wireout:0x31.0"
+        "overflow": "wireout:0x31.0",
+        "console_tx_drop": "wireout:0x31.2"
       },
       "stream": {
         "samples": "okBTPipeOut:0xa0"
@@ -158,10 +391,10 @@
         "cmdset": "str",
         "kdi": "str",
         "board_id": "u32",
-        "dna": "str",
-        "gateware_sha": "str"
+        "fw": "str",
+        "gw": "str"
       },
-      "doc": "Handshake. Also readable via the identity registers pre-boot."
+      "doc": "Handshake. fw/gw are the firmware and gateware git shas (8 hex) \u2014 equal when both came from one build. The identity REGISTERS carry the same gateware sha pre-boot; the device DNA is not on this command (it is AXI-side, reachable via the human `kv id`).\n"
     },
     {
       "name": "power.status",
@@ -185,7 +418,6 @@
         "present": "u8"
       },
       "errors": [
-        "i2c_nak",
         "no_device"
       ],
       "worst_ms": 1400,
@@ -229,6 +461,7 @@
         "ch_mode": "u16"
       },
       "errors": [
+        "bad_args",
         "not_present",
         "no_ip"
       ],
@@ -265,7 +498,7 @@
         "valid": "bool[]"
       },
       "errors": [
-        "not_present",
+        "bad_args",
         "no_ip"
       ],
       "worst_ms": 5,

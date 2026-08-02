@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.1.0 — frame format 2: the self-describing container
+
+**Wire-visible: the frame format changes completely. Format 1 frames no longer decode.**
+Safe to do now because nothing has bound: no gateware emits format 2, and `clean_frame`
+stays clear so a host that needs it refuses to bind.
+
+`decode` now needs **no descriptor at all** — every length, lane identity, element width and
+cadence is on the wire.
+
+```
+32 B header   magic | format=2 | flags | timestamp u48 | frame_words | layout |
+              hdr_words | n_sections | run_id | contract_rev | desc_words
+descriptors   n x 16 B, stride taken FROM THE WIRE so it can grow again
+lane ids      sum(n_lanes) x u16 · bodies element-major (1/16/32/64-bit) · CRC-32 trailer
+```
+
+* **`magic` is a resync anchor only, never a validity test.** Validity is CRC + declared
+  length + timestamp continuity. Host-side the CRC is one call: `zlib.crc32(frame) ==
+  0x2144DF1C`. A separate header CRC is impossible — the emitter produces the header long
+  before the body exists — so the substitute is that the next magic must appear at the
+  declared stride.
+* **A new module type is a new `kind`**, skipped by `section_words`. Additive: no decoder
+  change, no version bump. An unknown *format* is skippable too, by `frame_words`; `magic`,
+  `format` and `frame_words` are frozen at their offsets for every future format.
+* **Cadence is an exact rational** (`tick_num`/`tick_den`; 30 kHz = 10000/3). Rate is never
+  normative in this contract — the timebase is. A hardware rate change needs no contract
+  change. An integer tick count could not express 30 kHz and would drift 1.44 s over a
+  4-hour recording.
+* **One shared 48-bit timebase at 10 ns**, sampled per frame, epoch per run paired with
+  `run_id`. Aligning two streams is exact integer subtraction — no sync channel, no
+  per-stream linear fit. The frame-to-frame delta **jitters** (3333/3334 at 30 kHz) and there
+  is deliberately no constant-delta invariant, because at 30 kS/s one is not implementable.
+* **Digital input is bit-packed**: 16 lines cost one word, every bit named by its own lane
+  id, so no host needs a slot-to-bit formula.
+* **`to_device` is reserved** — declared, not implemented. The container is
+  direction-agnostic; reserving the direction before anything binds is nearly free.
+* **7 negative vectors** now ship with the normative reason token each must be rejected
+  with, so a decoder can be proven to reject what it must, not merely accept what it should.
+
+Known limitation, published deliberately: digital-in levels are sampled at the *end* of the
+frame that carries them, so they trail their own timestamp by up to one frame period and the
+offset varies with the enabled lane count. Derived from RTL, not bench-measured. A future
+emitter latches at frame start and this note tightens.
+
+`kdi:` stays `0.1`: it is the command-set version and no command changed.
+
+
 All notable, **wire-visible** changes to the Keyvast Device Interface. One entry
 per contract version.
 
