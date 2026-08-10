@@ -10,8 +10,8 @@
   "artifacts": [
     {
       "name": "descriptor.json",
-      "size": 25597,
-      "checksum": "sha256:15cd1f86ba921b748c6cd9457678aa8fed4fe2c8cbe5010fc8145b8e44ad42d9"
+      "size": 27665,
+      "checksum": "sha256:cb870828a33675c351aefb74674cefd77e18847dd6d3346716ce2cfdde7a30c2"
     },
     {
       "name": "schema.json",
@@ -26,5 +26,5 @@
     "target": "software-reference",
     "note": "kdi.conform against the software device; NOT a gateware result"
   },
-  "kdi_release": "0.3.0"
+  "kdi_release": "0.3.1"
 }

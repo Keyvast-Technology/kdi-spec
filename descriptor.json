@@ -350,7 +350,12 @@
         {
           "id": "loss_oracle",
           "who": "host",
-          "rule": "frames lost between two timestamps = round(dt * tick_den / tick_num) - 1"
+          "rule": "frames lost between two timestamps = round(dt * tick_den / tick_num) - 1, WITHIN ONE STREAM only -- never across streams, which are not co-sampled"
+        },
+        {
+          "id": "not_co_sampled",
+          "who": "host",
+          "rule": "streams are INDEPENDENTLY SAMPLED and share only the timebase. A host MUST locate a stream's samples by that stream's own timestamps and MUST NOT pair samples across streams by index or by arrival order. adio_dig takes its first sample at the epoch origin; rhd_matrix takes its first at the acquisition engine's next timestep boundary, so the offset between two streams' first samples is uniform in [0, one frame period of the slower stream) and is DIFFERENT ON EVERY RUN. It does NOT drift: measured over four independent 2-minute runs the trend was +0.31, -0.34, -0.61 and +0.73 frame periods -- mean +0.02, sign alternating, i.e. read-phase noise around zero, which is what one shared counter predicts and two counters could not produce. Cross-stream alignment is exact integer subtraction of timestamps, and that is the whole reason the timebase is shared"
         }
       ],
       "error_tokens": [
@@ -605,7 +610,12 @@
         {
           "id": "loss_oracle",
           "who": "host",
-          "rule": "frames lost between two timestamps = round(dt * tick_den / tick_num) - 1"
+          "rule": "frames lost between two timestamps = round(dt * tick_den / tick_num) - 1, WITHIN ONE STREAM only -- never across streams, which are not co-sampled"
+        },
+        {
+          "id": "not_co_sampled",
+          "who": "host",
+          "rule": "streams are INDEPENDENTLY SAMPLED and share only the timebase. A host MUST locate a stream's samples by that stream's own timestamps and MUST NOT pair samples across streams by index or by arrival order. adio_dig takes its first sample at the epoch origin; rhd_matrix takes its first at the acquisition engine's next timestep boundary, so the offset between two streams' first samples is uniform in [0, one frame period of the slower stream) and is DIFFERENT ON EVERY RUN. It does NOT drift: measured over four independent 2-minute runs the trend was +0.31, -0.34, -0.61 and +0.73 frame periods -- mean +0.02, sign alternating, i.e. read-phase noise around zero, which is what one shared counter predicts and two counters could not produce. Cross-stream alignment is exact integer subtraction of timestamps, and that is the whole reason the timebase is shared"
         }
       ],
       "error_tokens": [
