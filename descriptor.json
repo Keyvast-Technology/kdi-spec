@@ -1,5 +1,5 @@
 {
-  "kdi": "0.1",
+  "kdi": "0.3",
   "device": {
     "vendor": "keyvast",
     "type": "a75",
@@ -39,9 +39,39 @@
   ],
   "fastpath_registers": [
     {
-      "name": "run",
+      "name": "run_samples",
       "access": "rw",
-      "doc": "1 = acquiring"
+      "doc": "gates rhd_matrix emission; the RHX engine must also run"
+    },
+    {
+      "name": "run_digital",
+      "access": "rw",
+      "doc": "1 = the adio_dig stream is acquiring"
+    },
+    {
+      "name": "lanes_samples",
+      "access": "rw",
+      "doc": "bit i = include acquisition lane i in rhd_matrix"
+    },
+    {
+      "name": "burst_samples",
+      "access": "rw",
+      "doc": "frames rhd_matrix emits per run; 0 = free-run. Choose N so N*frame_bytes is a multiple of 16"
+    },
+    {
+      "name": "burst_digital",
+      "access": "rw",
+      "doc": "frames adio_dig emits per run; 0 = free-run. Choose N so N*frame_bytes is a multiple of 16"
+    },
+    {
+      "name": "stream_status_samples",
+      "access": "ro",
+      "doc": "[15:0] words32 readable now (bytes = x4), [16] sticky overrun"
+    },
+    {
+      "name": "stream_status_digital",
+      "access": "ro",
+      "doc": "[15:0] words32 readable now (bytes = x4), [16] sticky overrun"
     },
     {
       "name": "occupancy",
@@ -293,9 +323,14 @@
           "rule": "tick_num >= 1 and tick_den >= 1; a zero divides by zero in the loss oracle"
         },
         {
+          "id": "burst_alignment",
+          "who": "host",
+          "rule": "for a bounded capture (burst_* != 0) the host MUST choose N such that (N * frame_bytes) % 16 == 0, because a USB3 pipe read is a multiple of 16 bytes and a KDI frame usually is not. Unaligned bursts leave a retrievable-only-later remainder"
+        },
+        {
           "id": "first_of_run",
           "who": "both",
-          "rule": "a frame with flags[0] set has timestamp == 0"
+          "rule": "flags[0] marks the start of a contiguous segment of a stream. Its timestamp is the shared timebase value and need NOT be 0, and successive flagged frames MUST have strictly increasing timestamps. Not at-most-one-per-run_id: run_id is the DEVICE-WIDE epoch, so a stream that restarts while another holds the epoch open legitimately announces again under the same run_id"
         },
         {
           "id": "lane_ids",
@@ -326,7 +361,7 @@
         "reserved_bits",
         "tick_sane",
         "timestamp_top16",
-        "first_of_run_ts",
+        "first_of_run_dup",
         "desc_words",
         "hdr_words_fits",
         "body_fits_frame",
@@ -337,6 +372,261 @@
         "format_skipped"
       ],
       "max_frame_bytes": 2408
+    },
+    "digital": {
+      "direction": "from_device",
+      "implemented": true,
+      "frame_format": 2,
+      "byte_order": "little",
+      "word_bits": 16,
+      "frozen_prefix": [
+        {
+          "name": "magic",
+          "offset": 0,
+          "type": "u32",
+          "value": 1178883659
+        },
+        {
+          "name": "format",
+          "offset": 4,
+          "type": "u16"
+        },
+        {
+          "name": "frame_words",
+          "offset": 16,
+          "type": "u32",
+          "units": "words16"
+        }
+      ],
+      "header": [
+        {
+          "name": "magic",
+          "offset": 0,
+          "type": "u32",
+          "value": 1178883659
+        },
+        {
+          "name": "format",
+          "offset": 4,
+          "type": "u16",
+          "value": 2
+        },
+        {
+          "name": "flags",
+          "offset": 6,
+          "type": "u16"
+        },
+        {
+          "name": "timestamp",
+          "offset": 8,
+          "type": "u64"
+        },
+        {
+          "name": "frame_words",
+          "offset": 16,
+          "type": "u32",
+          "units": "words16"
+        },
+        {
+          "name": "layout",
+          "offset": 20,
+          "type": "u16"
+        },
+        {
+          "name": "hdr_words",
+          "offset": 22,
+          "type": "u16",
+          "units": "words16"
+        },
+        {
+          "name": "n_sections",
+          "offset": 24,
+          "type": "u16"
+        },
+        {
+          "name": "run_id",
+          "offset": 26,
+          "type": "u16"
+        },
+        {
+          "name": "contract_rev",
+          "offset": 28,
+          "type": "u16"
+        },
+        {
+          "name": "desc_words",
+          "offset": 30,
+          "type": "u16",
+          "units": "words16"
+        }
+      ],
+      "descriptor": {
+        "words": 8,
+        "fields": [
+          {
+            "name": "kind",
+            "offset": 0,
+            "type": "u8"
+          },
+          {
+            "name": "dflags",
+            "offset": 1,
+            "type": "u8"
+          },
+          {
+            "name": "n_lanes",
+            "offset": 2,
+            "type": "u16"
+          },
+          {
+            "name": "words_per_lane",
+            "offset": 4,
+            "type": "u16"
+          },
+          {
+            "name": "section_words",
+            "offset": 6,
+            "type": "u16"
+          },
+          {
+            "name": "tick_num",
+            "offset": 8,
+            "type": "u32"
+          },
+          {
+            "name": "tick_den",
+            "offset": 12,
+            "type": "u16"
+          },
+          {
+            "name": "pad",
+            "offset": 14,
+            "type": "u16",
+            "value": 0
+          }
+        ],
+        "element_bits": {
+          "0": 16,
+          "1": 1,
+          "2": 32,
+          "3": 64
+        }
+      },
+      "timebase": {
+        "ticks_per_second": 100000000,
+        "timestamp_bits": 48,
+        "epoch": "run_start",
+        "doc": "ONE free-running counter, sampled per frame by every section, so aligning two streams is exact integer subtraction \u2014 no sync channel and no per-stream linear fit. The frame-to-frame delta JITTERS and that is normal: 100e6/30e3 = 3333.33, so it alternates 3333/3334. There is deliberately NO constant-delta invariant, because at 30 kS/s one is not implementable. Each section reports its own exact cadence as a rational, so a host never needs a nominal rate: RATE IS NEVER NORMATIVE IN THIS CONTRACT, THE TIMEBASE IS. A hardware rate change needs no contract change. The counter is asynchronous to the acquisition clock, so the true jitter bound is a hardware measurement that has NOT been made; do not hardcode a tolerance.\n"
+      },
+      "kinds": [
+        {
+          "code": 16,
+          "name": "adio_dig",
+          "max_lanes": 16,
+          "element_bits": 1,
+          "rows": 1,
+          "row": [
+            {
+              "name": "level",
+              "type": "u1"
+            }
+          ],
+          "doc": "ADIO digital INPUT levels, one bit-packed lane per physical line: 16 lines cost ONE word and every bit is named by its own lane id, so no host needs a slot-to-bit formula. The level is latched at FRAME START, so it belongs to its own frame's timestamp instant (keyvast-fpga #76, fixed). LEVELS, not edges: a pulse shorter than one sample period can be missed and an edge is located only to +-1 sample.\n"
+        }
+      ],
+      "stream_id_blocks": [
+        {
+          "block": "0x1000-0x1fff",
+          "name": "adio_digital",
+          "formula": "0x1000 + slot*16 + channel"
+        }
+      ],
+      "invariants": [
+        {
+          "id": "alignment",
+          "who": "both",
+          "rule": "frame_words % 4 == 0 and hdr_words % 4 == 0"
+        },
+        {
+          "id": "magic_is_anchor",
+          "who": "host",
+          "rule": "magic is a resync anchor ONLY, never a validity test; validity is CRC + declared length"
+        },
+        {
+          "id": "crc_residue",
+          "who": "host",
+          "rule": "zlib.crc32(whole frame including its trailer) == 0x2144DF1C"
+        },
+        {
+          "id": "section_words",
+          "who": "both",
+          "rule": "section_words == words_per_lane * ceil(n_lanes * element_bits / 16)"
+        },
+        {
+          "id": "desc_stride",
+          "who": "host",
+          "rule": "take the descriptor stride from desc_words on the wire, never a compiled-in constant; reject desc_words < 8; ignore bytes past the fields you know"
+        },
+        {
+          "id": "reserved_reject",
+          "who": "host",
+          "rule": "REJECT (never ignore) a frame with any reserved bit set: flags[15:3], dflags[0], dflags[7:3], descriptor pad, timestamp[63:48]"
+        },
+        {
+          "id": "tick_sane",
+          "who": "both",
+          "rule": "tick_num >= 1 and tick_den >= 1; a zero divides by zero in the loss oracle"
+        },
+        {
+          "id": "burst_alignment",
+          "who": "host",
+          "rule": "for a bounded capture (burst_* != 0) the host MUST choose N such that (N * frame_bytes) % 16 == 0, because a USB3 pipe read is a multiple of 16 bytes and a KDI frame usually is not. Unaligned bursts leave a retrievable-only-later remainder"
+        },
+        {
+          "id": "first_of_run",
+          "who": "both",
+          "rule": "flags[0] marks the start of a contiguous segment of a stream. Its timestamp is the shared timebase value and need NOT be 0, and successive flagged frames MUST have strictly increasing timestamps. Not at-most-one-per-run_id: run_id is the DEVICE-WIDE epoch, so a stream that restarts while another holds the epoch open legitimately announces again under the same run_id"
+        },
+        {
+          "id": "lane_ids",
+          "who": "both",
+          "rule": "lane ids ascend and are unique within a section"
+        },
+        {
+          "id": "dup_kinds_ok",
+          "who": "host",
+          "rule": "two sections of the same kind in one frame are LEGAL; a singular accessor must raise, never return the first"
+        },
+        {
+          "id": "unknown_kind",
+          "who": "host",
+          "rule": "skip an unknown kind by section_words; skip an unknown format by frame_words"
+        },
+        {
+          "id": "loss_oracle",
+          "who": "host",
+          "rule": "frames lost between two timestamps = round(dt * tick_den / tick_num) - 1"
+        }
+      ],
+      "error_tokens": [
+        "crc_err",
+        "bad_length",
+        "section_words",
+        "lane_ids",
+        "reserved_bits",
+        "tick_sane",
+        "timestamp_top16",
+        "first_of_run_dup",
+        "desc_words",
+        "hdr_words_fits",
+        "body_fits_frame",
+        "body_shape",
+        "ambiguous_kind",
+        "resync_bytes",
+        "unknown_kind",
+        "format_skipped"
+      ],
+      "max_frame_bytes": 88
     },
     "to_device": {
       "direction": "to_device",
@@ -364,13 +654,20 @@
         "caps": "wireout:0x36",
         "gateware_sha": "wireout:0x37",
         "contract_ready": "wireout:0x31.1",
-        "run": "wirein:0x00.1",
+        "run_samples": "wirein:0x11.1",
+        "run_digital": "wirein:0x11.0",
+        "lanes_samples": "wirein:0x12",
+        "burst_digital": "wirein:0x13[15:0]",
+        "burst_samples": "wirein:0x13[31:16]",
+        "stream_status_samples": "wireout:0x39",
+        "stream_status_digital": "wireout:0x38",
         "occupancy": "wireout:0x20",
         "overflow": "wireout:0x31.0",
         "console_tx_drop": "wireout:0x31.2"
       },
       "stream": {
-        "samples": "okBTPipeOut:0xa0"
+        "samples": "okPipeOut:0xa3",
+        "digital": "okPipeOut:0xa2"
       },
       "message": {
         "channel": "vuart",
