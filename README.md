@@ -1,8 +1,22 @@
-# Keyvast Device Interface (KDI) — the published contract
+# Keyvast Device Interface (KDI)
 
-This repository is the **public contract** for the Keyvast acquisition instrument:
-the machine-readable descriptor, its JSON Schema, golden vectors, and a manifest —
-everything a host needs to talk to the device, in any language, over any transport.
+The **contract** for the Keyvast acquisition instrument, and a **Rust host library** that
+implements it.
+
+| | |
+|---|---|
+| [`spec/`](spec/) | the contract — a machine-readable descriptor, its JSON Schema, golden vectors and a manifest. Everything a host needs, in any language, over any transport. |
+| [`rs/`](rs/) | the Rust SDK, published as [`kdi`](https://crates.io/crates/kdi). Source only; the device drivers it bundles are fetched at build time, not tracked here. |
+
+**`spec/` does not depend on `rs/`, and that is the point.** The contract is what a second
+implementation is built against — not this crate, and not any behaviour only this crate has. A
+difference between the two is a bug in the contract, not a feature of Rust. `rs/` is here so the
+published crate has a home, an issue tracker and readable history; it is a *consumer* of `spec/`
+like any other host would be.
+
+`rs/` is a **one-way mirror** of the source that builds the published crate. Pull requests against
+it cannot be merged as-is — open them anyway if you have found something, and say so; the fix will
+land upstream and appear here on the next release.
 
 > **Status: v0.4.0 — format 2 is emitted by shipping gateware and verified on hardware.**
 > The device emits format-2 frames on two independent streams and advertises the `clean_frame`
@@ -23,10 +37,10 @@ everything a host needs to talk to the device, in any language, over any transpo
 
 | File | Purpose |
 |------|---------|
-| `descriptor.json` | **the contract** — device identity, capabilities, the two register drawers, the sample-stream layout, and the public command set. |
-| `schema.json` | JSON Schema (draft 2020-12) — validate a descriptor without our code. |
-| `manifest.json` | sha256 of every artifact + contract/build identity + the conformance result. The only place hashes live. |
-| `vectors/*.bin` + `vectors/golden_frame.json` | **six** frames and their expected decodes, a streaming case, **and 20 negative frames each with the exact reason token it must be rejected with** — so a decoder is testable with no hardware, in both directions. The set is deliberately wider than one case: at `rows == 1` a row-major and a lane-major decoder emit IDENTICAL bytes, so a single-frame oracle certifies a decoder that transposes `rhd_matrix`'s 35 rows against its lanes and emits plausible data at the wrong channel. `golden_wide` exists for the same reason in the other direction: it uses descriptor strides and element widths no current device emits, so a decoder that compiles those in is caught before a future device meets it. |
+| `spec/descriptor.json` | **the contract** — device identity, capabilities, the two register drawers, the sample-stream layout, and the public command set. |
+| `spec/schema.json` | JSON Schema (draft 2020-12) — validate a descriptor without our code. |
+| `spec/manifest.json` | sha256 of every artifact + contract/build identity + the conformance result. The only place hashes live. |
+| `spec/vectors/*.bin` + `spec/vectors/golden_frame.json` | **six** frames and their expected decodes, a streaming case, **and 20 negative frames each with the exact reason token it must be rejected with** — so a decoder is testable with no hardware, in both directions. The set is deliberately wider than one case: at `rows == 1` a row-major and a lane-major decoder emit IDENTICAL bytes, so a single-frame oracle certifies a decoder that transposes `rhd_matrix`'s 35 rows against its lanes and emits plausible data at the wrong channel. `golden_wide` exists for the same reason in the other direction: it uses descriptor strides and element widths no current device emits, so a decoder that compiles those in is caught before a future device meets it. |
 | `CHANGELOG.md` | one entry per contract version; wire-visible changes only. |
 
 ## How to consume it
@@ -36,7 +50,7 @@ and speaks the contract via three primitives — `reg_read/write(name)`,
 `stream(name)`, `message(request) → response` — resolving every name through the
 descriptor's `bindings` block. It never hardcodes a physical endpoint.
 
-1. Read `descriptor.json` (validate against `schema.json`).
+1. Read `spec/descriptor.json` (validate against `spec/schema.json`).
 2. Handshake: check `contract_version` major, poll `contract_ready`, require the
    capability bits you need.
 3. Send typed commands from `commands`; read `streams.samples` and decode with

@@ -1,0 +1,52 @@
+Keyvast Device Interface (KDI)
+Copyright 2026 Keyvast Technology
+
+This product includes software developed at Keyvast Technology, licensed under
+the Apache License, Version 2.0. See LICENSE.
+
+================================================================================
+THIRD-PARTY COMPONENTS
+================================================================================
+
+The `kdi` crate bundles a compiled USB3 device driver for each supported platform,
+under `vendor/`. These files are NOT covered by the Apache License above. They
+are third-party binaries redistributed with permission; each one's origin, byte
+length and SHA-256 are recorded in `src/bundled.rs`, which is compiled in
+whether or not the `bundled` feature is enabled, so the provenance travels with
+every copy of this crate.
+
+Only the `bundled` feature embeds these bytes into your artifact. A default
+build links none of them and loads a driver from the filesystem instead.
+
+--------------------------------------------------------------------------------
+Lua 5.3.1
+--------------------------------------------------------------------------------
+
+The bundled device drivers statically embed Lua 5.3.1. Lua is distributed under
+the MIT licence, which requires the following notice to accompany any
+redistribution:
+
+  Copyright (C) 1994-2015 Lua.org, PUC-Rio.
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+  Lua authors: R. Ierusalimschy, L. H. de Figueiredo, W. Celes.
+
+This embedding was found by inspecting the shipped binaries directly; the string
+`Lua 5.3.1` and the copyright line above are present in all four.

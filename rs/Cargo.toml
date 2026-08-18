@@ -1,0 +1,111 @@
+[package]
+name = "kdi"
+description = "Keyvast Device Interface (KDI): find a device by identity, control it with typed commands, read its data streams."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+readme = "README.md"
+# Discovery metadata. `homepage` is the published contract, not a marketing page: it is what a
+# consumer needs to check this crate against, and it is the same URL `repository` points at.
+homepage.workspace = true
+documentation = "https://docs.rs/kdi"
+keywords = ["instrument", "acquisition", "neuroscience", "sdk", "usb3"]
+categories = ["science", "hardware-support", "api-bindings"]
+# WITHOUT THIS THE PUBLISHED CRATE SHIPS NO DRIVER, and silently.
+#
+# `vendor/*.bin` is .gitignore'd — fetched by `make vendor-drivers`, not tracked. With no `include`,
+# cargo enumerates a package through git and DROPS VCS-ignored files, so the tarball would carry no
+# `vendor/` at all. Nothing would notice: `default = []`, so `cargo package`'s verify build never
+# compiles `bundled` and never reaches `include_bytes!`. The breakage appears only on a customer's
+# `--features bundled` build.
+#
+# Measured, and the measurement is the point: in CI, where cargo has a working git view,
+# `cargo package --list` reported 0 `vendor/driver-*` entries. On a developer box whose container
+# mount hides `.git` (this repo is checked out as a git WORKTREE, so `.git` is a file pointing
+# elsewhere) cargo falls back to a directory walk and reports 4 — so a local check here is not
+# evidence. `.github/workflows/kdi.yml`'s "The packaged crate carries the drivers" step is.
+include = [
+    "src/**/*.rs",
+    "examples/**/*.rs",
+    "vendor/*.bin",
+    "LICENSE",
+    "NOTICE",
+    "README.md",
+    "Cargo.toml",
+]
+# `tests/` IS DELIBERATELY NOT SHIPPED, and dropping it is a publish blocker fix, not tidying.
+# `tests/vendor_neutral.rs` is the guard that keeps the board vendor's name out of anything a
+# customer reads, so its fixtures ARE the forbidden strings -- and it exempts itself from its own
+# scan, which is right for an in-repo guard and catastrophic in a tarball: CI stays green while the
+# published crate carries the manufacturer's name, the board model and a bench instrument's serial.
+# Independently, three of the suites read paths outside the crate root and cannot pass from a
+# tarball at all, so shipping them published tests that were guaranteed to fail.
+# THE GUARD MOVED, it was not removed. `publish = false` made an accidental `cargo publish`
+# impossible rather than unlikely, and that mattered while the licence was an open item and the
+# usb3 binding had never opened a board. Both of those are now settled: the licence is
+# ratified, and the binding has run against real hardware including its failure modes.
+#
+# `false` also makes `cargo publish --dry-run` impossible, so it cannot coexist with a pipeline that
+# rehearses a publish before performing one -- and a rehearsal that cannot run is worth less than
+# the guard it protects. The control is now .github/workflows/publish-crate.yml: manual dispatch
+# only, never a push or a tag, defaulting to a dry run, with tools/check_publishable.py refusing a
+# tarball that leaks or misdeclares. That gate catches things `false` never could -- it is what
+# found a bench serial and the board vendor's name inside the shipped tests.
+#
+# Named registry rather than `true`: this crate may go to crates.io and nowhere else.
+publish = ["crates-io"]
+
+# Renders the feature gating: `Device::open_usb3`, `Error::Sdk` and `SdkErr` are marked with the
+# feature that supplies them instead of silently missing from a default-feature build's docs.
+# `bundled` is in the list because docs.rs builds on x86_64 Linux, which is vendored. Still NOT
+# `all-features`, so that adding a feature never silently becomes a docs-build requirement.
+[package.metadata.docs.rs]
+features = ["usb3", "sim", "bundled"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+# Calls `Device::open_usb3`, which only exists under the `usb3` feature. Without this entry a plain
+# `cargo clippy --all-targets` builds the example featureless and fails on the missing method.
+[[example]]
+name = "usb3_handshake"
+required-features = ["usb3"]
+
+# Configures from caller-supplied bytes. Needs `usb3` (the FFI), not `bundled` (the driver
+# blob). Bench builds add `bundled` so the Windows staging path actually `dlopen`s.
+[[example]]
+name = "usb3_configure"
+required-features = ["usb3"]
+
+[[example]]
+name = "usb3_capture"
+required-features = ["usb3"]
+
+[dependencies]
+# The message protocol IS JSON and the firmware emits \uXXXX escapes
+# (sw/zephyr/app/console/src/kdi_ctl.c:90-93). Hand-parsing device bytes at a trust boundary is
+# the flimsier algorithm, not the lazier one.
+serde_json = "1"
+# OPTIONAL AND OFF BY DEFAULT — the containment for the release-blocker risk in
+# Nothing in a default build dlopen()s anything.
+libloading = { version = "0.8", optional = true }
+
+[features]
+default = []
+usb3 = ["dep:libloading"]
+# Compile the target platform's USB3 driver into the artifact so a build runs on a machine with
+# no driver installed. Adds ~2 MB; OFF BY DEFAULT. A build without it loads the driver from a
+# directory. Vendored for Windows x86_64, Linux x86_64 and aarch64, and macOS aarch64 — every
+# other target is a compile error naming what is missing. Configuring a board takes the caller's
+# bitstream (`Device::open_usb3_configured`), not a second image in this crate.
+#
+# The bytes are in this crate's source EITHER WAY: Cargo packages a whole crate directory, so the
+# feature buys the artifact size back, not the download.
+bundled = ["usb3"]
+# tests/conform.rs only. It spawns `python3 -m kdi.cli serve`, so it must not run in a plain
+# `cargo test` on a machine with no Python — and a MISSING python3 must fail that test rather
+# than skip it, which is why the gate is a feature and not a runtime probe.
+conform = []
+# tests/gateware.rs only. The Verilator harness (`make kdi-sim`) is minutes of elaboration and a
+# TCP port, so it must not run in a plain `cargo test` — and `src/simlink.rs` must not reach a
+# default build's surface. Nothing here is a dependency: the harness is a socket.
+sim = []
