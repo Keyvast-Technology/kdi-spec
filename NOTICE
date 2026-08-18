@@ -1,0 +1,12 @@
+Keyvast Device Interface (KDI) — the published contract
+Copyright 2026 Keyvast Technology
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+This repository is published so that anyone may implement a host against the
+Keyvast Device Interface. The Apache-2.0 grant is deliberate and includes its
+patent licence: implementing a protocol is where patent exposure normally sits,
+and an invitation to build against a contract is worth little without it.
+
+The golden vectors under `vectors/` are test data. You are expected to copy them
+verbatim into your own test suite; that is what they are for.
