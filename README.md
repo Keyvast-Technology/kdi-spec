@@ -8,6 +8,20 @@ implements it.
 | [`spec/`](spec/) | the contract — a machine-readable descriptor, its JSON Schema, golden vectors and a manifest. Everything a host needs, in any language, over any transport. |
 | [`rs/`](rs/) | the Rust SDK, published as [`kdi`](https://crates.io/crates/kdi). Source only; the device drivers it bundles are fetched at build time, not tracked here. |
 
+## Releases
+
+Three artifacts on three schedules, so a tag says what actually moved:
+
+| tag | what it is | changes when |
+|---|---|---|
+| `spec-v0.4.0` | the contract bundle — descriptor, schema, vectors, manifest | the **wire format** moves. Rarely, and deliberately |
+| `gateware-v0.9.0` | a bitstream to flash, with the `gateware_sha` the board will report | a build is worth shipping to instruments |
+| [`kdi` on crates.io](https://crates.io/crates/kdi) | the Rust host library | the SDK changes |
+
+One contract version outlives many gateware builds, which is why they are not cut together: a
+contract release means the wire format changed, and saying that when it has not is worse than
+saying nothing. Each gateware release names the contract version it implements.
+
 **`spec/` does not depend on `rs/`, and that is the point.** The contract is what a second
 implementation is built against — not this crate, and not any behaviour only this crate has. A
 difference between the two is a bug in the contract, not a feature of Rust. `rs/` is here so the
