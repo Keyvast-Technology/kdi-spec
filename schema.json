@@ -7,8 +7,12 @@
     "kdi",
     "device",
     "caps",
+    "cap_gates",
+    "errors",
+    "host_errors",
     "identity_registers",
     "fastpath_registers",
+    "ready_timeout_ms",
     "streams",
     "commands",
     "bindings"
@@ -29,6 +33,33 @@
     },
     "caps": {
       "type": "object"
+    },
+    "cap_gates": {
+      "type": "object"
+    },
+    "errors": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "retryable"
+        ],
+        "properties": {
+          "retryable": {
+            "type": "boolean"
+          },
+          "doc": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "host_errors": {
+      "type": "object"
+    },
+    "ready_timeout_ms": {
+      "type": "integer",
+      "minimum": 0
     },
     "identity_registers": {
       "type": "array",
@@ -87,7 +118,11 @@
               "kinds",
               "invariants",
               "timebase",
-              "max_frame_bytes"
+              "max_frame_bytes",
+              "wire_layout",
+              "registers",
+              "reject_tokens",
+              "counters"
             ],
             "properties": {
               "implemented": {

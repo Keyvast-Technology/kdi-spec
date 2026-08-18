@@ -4,14 +4,20 @@ This repository is the **public contract** for the Keyvast acquisition instrumen
 the machine-readable descriptor, its JSON Schema, golden vectors, and a manifest —
 everything a host needs to talk to the device, in any language, over any transport.
 
-> **Status: v0.1.1 — frame format 2 pinned, NOT YET EMITTED BY GATEWARE.**
-> The contract, its codec and its vectors are complete and proven in software, and the
-> control plane is hardware-verified on the bench. The **data plane is not**: no shipping
-> bitstream emits format 2 yet, and the device correspondingly leaves the `clean_frame`
-> capability bit CLEAR — so a host that requires the clean frame will correctly refuse to
-> bind to today's hardware. The format is published now, ahead of the emitter, precisely so
-> that it is fixed before anything binds to it. This is generated output; the source lives
-> in a separate repo.
+> **Status: v0.4.0 — format 2 is emitted by shipping gateware and verified on hardware.**
+> The device emits format-2 frames on two independent streams and advertises the `clean_frame`
+> capability, so a host that requires it will bind. The data plane is hardware-verified: ~6,600
+> probe-runs across sample rates and lane masks, bounded and free-running, with zero failures —
+> which bounds the failure rate under 0.045% at 95% confidence. The control plane, the command
+> channel and the flash path are likewise exercised on silicon, including their failure modes.
+>
+> **One thing is NOT hardware-verified, and you should know which:** the `rhd_matrix` ROW ORDER.
+> Checking it on a bench needs a *driven* input — with floating inputs both the amplifier rows and
+> the slow aux rows are noise and the comparison decides nothing. The authority for row order is a
+> golden chip-model simulation that drives known values through a modelled headstage. The order
+> published here is that model's, and it is the one the gateware is built against.
+>
+> This is generated output; the source lives in a separate repo.
 
 ## What's here
 
@@ -20,7 +26,7 @@ everything a host needs to talk to the device, in any language, over any transpo
 | `descriptor.json` | **the contract** — device identity, capabilities, the two register drawers, the sample-stream layout, and the public command set. |
 | `schema.json` | JSON Schema (draft 2020-12) — validate a descriptor without our code. |
 | `manifest.json` | sha256 of every artifact + contract/build identity + the conformance result. The only place hashes live. |
-| `vectors/golden_frame.{bin,json}` | a real frame, its expected decode, **and 7 negative frames with the exact reason token each must be rejected with** — so a decoder is testable with no hardware, in both directions. |
+| `vectors/*.bin` + `vectors/golden_frame.json` | **six** frames and their expected decodes, a streaming case, **and 20 negative frames each with the exact reason token it must be rejected with** — so a decoder is testable with no hardware, in both directions. The set is deliberately wider than one case: at `rows == 1` a row-major and a lane-major decoder emit IDENTICAL bytes, so a single-frame oracle certifies a decoder that transposes `rhd_matrix`'s 35 rows against its lanes and emits plausible data at the wrong channel. `golden_wide` exists for the same reason in the other direction: it uses descriptor strides and element widths no current device emits, so a decoder that compiles those in is caught before a future device meets it. |
 | `CHANGELOG.md` | one entry per contract version; wire-visible changes only. |
 
 ## How to consume it

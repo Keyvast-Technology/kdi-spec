@@ -1,5 +1,5 @@
 {
-  "kdi": "0.3",
+  "kdi": "0.4",
   "device": {
     "vendor": "keyvast",
     "type": "a75",
@@ -16,15 +16,149 @@
     "6": "slot_health",
     "7": "field_update"
   },
+  "cap_gates": {
+    "clean_frame": {
+      "doc": "this build emits the format-2 self-describing frame on the declared stream endpoints",
+      "streams": [
+        "samples",
+        "digital"
+      ],
+      "registers": [
+        "run_samples",
+        "run_digital",
+        "lanes_samples",
+        "burst_samples",
+        "burst_digital",
+        "stream_status_samples",
+        "stream_status_digital"
+      ]
+    },
+    "command_protocol": {
+      "doc": "the typed request/response command channel is live (firmware-dependent: it is baked into the same .bit)",
+      "commands": [
+        "sys.hello",
+        "power.status",
+        "power.up",
+        "adio.mode",
+        "adio.adc",
+        "gnd.eeprom.read",
+        "sys.claim",
+        "sys.release",
+        "sys.challenge",
+        "sys.unlock"
+      ]
+    },
+    "ddr3": {
+      "doc": "the DDR3 pipe buffer is present and calibrated; without it a stream's depth is the on-chip FIFO only"
+    },
+    "adio": {
+      "doc": "ADIO analog/digital module I/O is present",
+      "commands": [
+        "adio.mode",
+        "adio.adc"
+      ]
+    },
+    "grounding": {
+      "doc": "the grounding/module-ID board is present",
+      "commands": [
+        "gnd.eeprom.read"
+      ]
+    },
+    "ttl_in": {
+      "doc": "TTL inputs are wired to the digital stream's lanes"
+    },
+    "slot_health": {
+      "doc": "per-slot presence and rail health are readable",
+      "commands": [
+        "power.status"
+      ]
+    },
+    "field_update": {
+      "doc": "gateware images can be written over the wire and selected at boot (RESERVED \u2014 no command implements this yet)"
+    }
+  },
+  "errors": {
+    "bad_args": {
+      "retryable": false,
+      "doc": "argument count, type or range rejected before the handler ran"
+    },
+    "unknown_cmd": {
+      "retryable": false,
+      "doc": "no such command in this cmdset"
+    },
+    "tier_locked": {
+      "retryable": false,
+      "doc": "service/factory command refused; no unlock grant in this session"
+    },
+    "not_present": {
+      "retryable": false,
+      "doc": "slot not in the last power-sequence present mask; refusing to drive its pins"
+    },
+    "no_ip": {
+      "retryable": false,
+      "doc": "the slot's adio_core did not answer at its AXI page"
+    },
+    "no_device": {
+      "retryable": true,
+      "doc": "a Zephyr device backing this command is not ready"
+    },
+    "internal": {
+      "retryable": false,
+      "doc": "firmware bug \u2014 report it with the rc"
+    },
+    "busy": {
+      "retryable": true,
+      "doc": "another host holds the device lease; retry after it releases or its lease expires"
+    },
+    "not_claimed": {
+      "retryable": false,
+      "doc": "a state-changing command was sent without holding the lease; claim first"
+    },
+    "confirm_required": {
+      "retryable": false,
+      "doc": "a destructive command needs a matching `confirm` envelope echo"
+    },
+    "not_ready": {
+      "retryable": true,
+      "doc": "the device has not finished boot/calibration; poll contract_ready"
+    },
+    "ro_register": {
+      "retryable": false,
+      "doc": "a write was addressed to a read-only register"
+    },
+    "no_such_register": {
+      "retryable": false,
+      "doc": "no register or stream of that name in this binding"
+    },
+    "response_too_large": {
+      "retryable": false,
+      "doc": "the reply did not fit the device's response buffer and was not sent"
+    }
+  },
+  "host_errors": {
+    "host_timeout": {
+      "doc": "no reply / no data within the caller's deadline"
+    },
+    "host_short_read": {
+      "doc": "the transport returned fewer bytes than the framing declared"
+    },
+    "host_overflow": {
+      "doc": "this stream's sticky overrun was set: the frames just read may not be contiguous"
+    },
+    "host_unsafe_arg": {
+      "doc": "an argument was refused by the host before it reached the wire (see arg_charset)"
+    }
+  },
   "identity_registers": [
     {
       "name": "contract_version",
       "access": "ro",
-      "doc": "[31:16] major [15:0] minor"
+      "doc": "[31:16] major [15:0] minor. A READING OF 0 MEANS \"NOT A KDI DEVICE\" and a host MUST refuse to bind, regardless of its own major: an unmapped WireOut reads 0, so 0 is the absence of the register rather than major 0 \u2014 and while our own major IS 0 a plain major comparison cannot distinguish the two, so a non-KDI bitstream would otherwise bind successfully. A device MINOR higher than the host's is always fine; never do version arithmetic beyond the major equality test (docs/device_interface_plan.md \u00a76a).\n"
     },
     {
       "name": "caps",
-      "access": "ro"
+      "access": "ro",
+      "doc": "capability bitmap; bit assignments in `caps`, semantics in `cap_gates`"
     },
     {
       "name": "gateware_sha",
@@ -34,14 +168,14 @@
     {
       "name": "contract_ready",
       "access": "ro",
-      "doc": "1 once boot + DDR calibration complete (poll after connect)"
+      "doc": "1 once boot + DDR calibration complete. A host MUST poll this after connect and before any stream or command traffic, for at least `ready_timeout_ms`, and MUST refuse to bind if it never sets. This is the `init_calib` scar made explicit: acquiring before calibration silently drops beats (worst at one lane), and there is no other way to observe it.\n"
     }
   ],
   "fastpath_registers": [
     {
       "name": "run_samples",
       "access": "rw",
-      "doc": "gates rhd_matrix emission; the RHX engine must also run"
+      "doc": "1 = the rhd_matrix stream is acquiring (starts the SPI engine itself)"
     },
     {
       "name": "run_digital",
@@ -90,6 +224,7 @@
       "doc": "sticky: the device's console/message TX buffer overflowed and DROPPED bytes, so any reply read while this is set may be TRUNCATED. Readable without the CPU, which is the point \u2014 a truncated reply is otherwise indistinguishable from a device that answered short.\n"
     }
   ],
+  "ready_timeout_ms": 3000,
   "streams": {
     "samples": {
       "direction": "from_device",
@@ -97,6 +232,31 @@
       "frame_format": 2,
       "byte_order": "little",
       "word_bits": 16,
+      "registers": {
+        "run": "run_samples",
+        "burst": "burst_samples",
+        "status": "stream_status_samples",
+        "lanes": "lanes_samples"
+      },
+      "wire_layout": {
+        "header_at": 0,
+        "header_bytes": 32,
+        "descriptors_at": 32,
+        "descriptor_stride": "desc_words",
+        "lane_ids_at": "0x20 + n_sections * desc_words * 2",
+        "lane_ids": "u16[n_lanes] per section, in DESCRIPTOR ORDER, ascending and unique within a section",
+        "header_padding": "zero fill from the end of the lane-id array to hdr_words * 2",
+        "bodies_at": "hdr_words * 2",
+        "body_stride": "section_words",
+        "element_order": "row_major",
+        "element_at": "body_at + (row * n_lanes + lane) * (element_bits / 8)",
+        "bit_packed": "element_bits == 1 packs each ROW into ceil(n_lanes/16) little-endian u16 words, LSB FIRST: lane index l of the row is bit (l & 15) of word (l >> 4). So 16 digital lines cost ONE word.\n",
+        "trailer": "crc32",
+        "trailer_at": "frame_words * 2 - 4",
+        "trailer_bytes": 4,
+        "trailer_residue": 558161692,
+        "doc": "ROW-MAJOR IS NORMATIVE AND IS NOT OBSERVABLE IN A SINGLE-ROW FRAME. A decoder that indexes (lane * rows + row) produces identical bytes for any section with rows == 1, so the published adio_dig vector alone cannot distinguish it \u2014 and on rhd_matrix (35 rows) the same decoder yields plausible neural data at the wrong channel index, which is the failure PR #15 shipped once already. The published vector set therefore includes a multi-row 16-bit section specifically to make this observable.\n"
+      },
       "frozen_prefix": [
         {
           "name": "magic",
@@ -148,7 +308,8 @@
         {
           "name": "layout",
           "offset": 20,
-          "type": "u16"
+          "type": "u16",
+          "doc": "opaque section-arrangement id; a cache key, never a branch"
         },
         {
           "name": "hdr_words",
@@ -298,9 +459,19 @@
           "rule": "magic is a resync anchor ONLY, never a validity test; validity is CRC + declared length"
         },
         {
+          "id": "crc_algorithm",
+          "who": "both",
+          "rule": "CRC-32/ISO-HDLC (a.k.a. CRC-32, zlib/PKZIP): poly 0x04C11DB7, reflected form 0xEDB88320, init 0xFFFFFFFF, refin true, refout true, xorout 0xFFFFFFFF. Check value 0xCBF43926 over the nine bytes \"123456789\""
+        },
+        {
+          "id": "crc_trailer",
+          "who": "both",
+          "rule": "the trailer is a little-endian u32 at byte offset frame_words*2 - 4, computed over bytes [0, frame_words*2 - 4) \u2014 i.e. the whole frame except the trailer itself"
+        },
+        {
           "id": "crc_residue",
           "who": "host",
-          "rule": "zlib.crc32(whole frame including its trailer) == 0x2144DF1C"
+          "rule": "crc32(whole frame INCLUDING its trailer) == 0x2144DF1C \u2014 the residue form, so a host needs no separate slice"
         },
         {
           "id": "section_words",
@@ -353,12 +524,47 @@
           "rule": "frames lost between two timestamps = round(dt * tick_den / tick_num) - 1, WITHIN ONE STREAM only -- never across streams, which are not co-sampled"
         },
         {
+          "id": "run_restart",
+          "who": "both",
+          "rule": "a run starts on the 0->1 EDGE of the stream's `run` register. The FALLING edge flushes that stream's pipe buffers in every clock domain, resets its packer phase, clears its sticky overrun and abandons the frame in flight. Therefore a host that wants a defined restart MUST write 0, then 1 \u2014 writing 1 to an already-set bit starts nothing and inherits the previous run's state, including a sticky overrun that belongs to it. Scoped to the stream whose bit moved: the other stream may be mid-recording"
+        },
+        {
+          "id": "run_restart_host",
+          "who": "host",
+          "rule": "on the falling edge the host MUST also drop its own residue for that stream (any partial frame carried from a previous read), or the old run's bytes head the new run's stream and its whole frames arrive stamped with the old epoch"
+        },
+        {
+          "id": "burst_while_stopped",
+          "who": "host",
+          "rule": "write `burst_<stream>` while that stream's run bit is 0. The bound is latched at frame admission, so a value written mid-run does not apply cleanly to the run already in progress"
+        },
+        {
+          "id": "overrun_after_read",
+          "who": "host",
+          "rule": "poll the stream's sticky overrun (stream_status_<stream> bit 16) AFTER a read, never before. It is sticky since the last flush, so a pre-read check reports loss from before the call \u2014 and it WILL be set for any host that does not drain continuously. Checked after, it means exactly `the frames this read returned may not be contiguous`, which is the only form a host can act on"
+        },
+        {
+          "id": "masked_field_write",
+          "who": "host",
+          "rule": "a register bound to a FIELD (`0xNN.b` or `0xNN[hi:lo]`) MUST be written read-modify-masked, because registers share words: both run bits share one WireIn and both burst bounds share another. An unmasked write to one field clears its neighbour, which silently disarms the other stream"
+        },
+        {
+          "id": "contract_rev",
+          "who": "both",
+          "rule": "every frame's `contract_rev` equals this contract's MINOR. A host MUST accept a rev higher than its own and ignore it \u2014 a minor is additive by definition. A differing MAJOR cannot reach a bound host, because binding already refused it"
+        },
+        {
+          "id": "max_frame_bytes_advisory",
+          "who": "host",
+          "rule": "`max_frame_bytes` in the descriptor is a derived READ-SIZING HINT and MUST NOT be used as a validity test. Two sections of one kind are legal, so a frame may legitimately exceed it and must still decode rather than be counted bad_length and resynced away"
+        },
+        {
           "id": "not_co_sampled",
           "who": "host",
-          "rule": "streams are INDEPENDENTLY SAMPLED and share only the timebase. A host MUST locate a stream's samples by that stream's own timestamps and MUST NOT pair samples across streams by index or by arrival order. adio_dig takes its first sample at the epoch origin; rhd_matrix takes its first at the acquisition engine's next timestep boundary, so the offset between two streams' first samples is uniform in [0, one frame period of the slower stream) and is DIFFERENT ON EVERY RUN. It does NOT drift: measured over four independent 2-minute runs the trend was +0.31, -0.34, -0.61 and +0.73 frame periods -- mean +0.02, sign alternating, i.e. read-phase noise around zero, which is what one shared counter predicts and two counters could not produce. Cross-stream alignment is exact integer subtraction of timestamps, and that is the whole reason the timebase is shared"
+          "rule": "streams are INDEPENDENTLY SAMPLED and share only the timebase. A host MUST locate a stream's samples by that stream's own timestamps and MUST NOT pair samples across streams by index or by arrival order. adio_dig ships its first sample at the epoch origin; rhd_matrix ships its first FRAME at the acquisition engine's SECOND timestep boundary -- the first boundary is discarded, because the emitter admits a frame only once a timebase snapshot has retired and none has at the first boundary -- so the offset between the two streams' first samples is uniform in [1, 2) frame periods of the slower stream and is DIFFERENT ON EVERY RUN. A host MUST NOT assume a lower bound of 0: measured at 1 kS/s, adio_dig first stamp 2 ticks against rhd_matrix 104099 on a declared period of 101250, i.e. 1.028 periods on 5 of 5 runs. It does NOT drift: measured over four independent 2-minute runs the trend was +0.31, -0.34, -0.61 and +0.73 frame periods -- mean +0.02, sign alternating, i.e. read-phase noise around zero, which is what one shared counter predicts and two counters could not produce. Cross-stream alignment is exact integer subtraction of timestamps, and that is the whole reason the timebase is shared"
         }
       ],
-      "error_tokens": [
+      "reject_tokens": [
         "crc_err",
         "bad_length",
         "section_words",
@@ -369,12 +575,16 @@
         "first_of_run_dup",
         "desc_words",
         "hdr_words_fits",
-        "body_fits_frame",
-        "body_shape",
+        "body_fits_frame"
+      ],
+      "counters": {
+        "resync_bytes": "bytes skipped while scanning forward for the next magic",
+        "unknown_kind": "sections skipped by section_words because the kind is not in this host's registry",
+        "format_skipped": "frames skipped by frame_words because `format` is not one this host decodes"
+      },
+      "host_reject_tokens": [
         "ambiguous_kind",
-        "resync_bytes",
-        "unknown_kind",
-        "format_skipped"
+        "body_shape"
       ],
       "max_frame_bytes": 2408
     },
@@ -384,6 +594,30 @@
       "frame_format": 2,
       "byte_order": "little",
       "word_bits": 16,
+      "registers": {
+        "run": "run_digital",
+        "burst": "burst_digital",
+        "status": "stream_status_digital"
+      },
+      "wire_layout": {
+        "header_at": 0,
+        "header_bytes": 32,
+        "descriptors_at": 32,
+        "descriptor_stride": "desc_words",
+        "lane_ids_at": "0x20 + n_sections * desc_words * 2",
+        "lane_ids": "u16[n_lanes] per section, in DESCRIPTOR ORDER, ascending and unique within a section",
+        "header_padding": "zero fill from the end of the lane-id array to hdr_words * 2",
+        "bodies_at": "hdr_words * 2",
+        "body_stride": "section_words",
+        "element_order": "row_major",
+        "element_at": "body_at + (row * n_lanes + lane) * (element_bits / 8)",
+        "bit_packed": "element_bits == 1 packs each ROW into ceil(n_lanes/16) little-endian u16 words, LSB FIRST: lane index l of the row is bit (l & 15) of word (l >> 4). So 16 digital lines cost ONE word.\n",
+        "trailer": "crc32",
+        "trailer_at": "frame_words * 2 - 4",
+        "trailer_bytes": 4,
+        "trailer_residue": 558161692,
+        "doc": "ROW-MAJOR IS NORMATIVE AND IS NOT OBSERVABLE IN A SINGLE-ROW FRAME. A decoder that indexes (lane * rows + row) produces identical bytes for any section with rows == 1, so the published adio_dig vector alone cannot distinguish it \u2014 and on rhd_matrix (35 rows) the same decoder yields plausible neural data at the wrong channel index, which is the failure PR #15 shipped once already. The published vector set therefore includes a multi-row 16-bit section specifically to make this observable.\n"
+      },
       "frozen_prefix": [
         {
           "name": "magic",
@@ -435,7 +669,8 @@
         {
           "name": "layout",
           "offset": 20,
-          "type": "u16"
+          "type": "u16",
+          "doc": "opaque section-arrangement id; a cache key, never a branch"
         },
         {
           "name": "hdr_words",
@@ -558,9 +793,19 @@
           "rule": "magic is a resync anchor ONLY, never a validity test; validity is CRC + declared length"
         },
         {
+          "id": "crc_algorithm",
+          "who": "both",
+          "rule": "CRC-32/ISO-HDLC (a.k.a. CRC-32, zlib/PKZIP): poly 0x04C11DB7, reflected form 0xEDB88320, init 0xFFFFFFFF, refin true, refout true, xorout 0xFFFFFFFF. Check value 0xCBF43926 over the nine bytes \"123456789\""
+        },
+        {
+          "id": "crc_trailer",
+          "who": "both",
+          "rule": "the trailer is a little-endian u32 at byte offset frame_words*2 - 4, computed over bytes [0, frame_words*2 - 4) \u2014 i.e. the whole frame except the trailer itself"
+        },
+        {
           "id": "crc_residue",
           "who": "host",
-          "rule": "zlib.crc32(whole frame including its trailer) == 0x2144DF1C"
+          "rule": "crc32(whole frame INCLUDING its trailer) == 0x2144DF1C \u2014 the residue form, so a host needs no separate slice"
         },
         {
           "id": "section_words",
@@ -613,12 +858,47 @@
           "rule": "frames lost between two timestamps = round(dt * tick_den / tick_num) - 1, WITHIN ONE STREAM only -- never across streams, which are not co-sampled"
         },
         {
+          "id": "run_restart",
+          "who": "both",
+          "rule": "a run starts on the 0->1 EDGE of the stream's `run` register. The FALLING edge flushes that stream's pipe buffers in every clock domain, resets its packer phase, clears its sticky overrun and abandons the frame in flight. Therefore a host that wants a defined restart MUST write 0, then 1 \u2014 writing 1 to an already-set bit starts nothing and inherits the previous run's state, including a sticky overrun that belongs to it. Scoped to the stream whose bit moved: the other stream may be mid-recording"
+        },
+        {
+          "id": "run_restart_host",
+          "who": "host",
+          "rule": "on the falling edge the host MUST also drop its own residue for that stream (any partial frame carried from a previous read), or the old run's bytes head the new run's stream and its whole frames arrive stamped with the old epoch"
+        },
+        {
+          "id": "burst_while_stopped",
+          "who": "host",
+          "rule": "write `burst_<stream>` while that stream's run bit is 0. The bound is latched at frame admission, so a value written mid-run does not apply cleanly to the run already in progress"
+        },
+        {
+          "id": "overrun_after_read",
+          "who": "host",
+          "rule": "poll the stream's sticky overrun (stream_status_<stream> bit 16) AFTER a read, never before. It is sticky since the last flush, so a pre-read check reports loss from before the call \u2014 and it WILL be set for any host that does not drain continuously. Checked after, it means exactly `the frames this read returned may not be contiguous`, which is the only form a host can act on"
+        },
+        {
+          "id": "masked_field_write",
+          "who": "host",
+          "rule": "a register bound to a FIELD (`0xNN.b` or `0xNN[hi:lo]`) MUST be written read-modify-masked, because registers share words: both run bits share one WireIn and both burst bounds share another. An unmasked write to one field clears its neighbour, which silently disarms the other stream"
+        },
+        {
+          "id": "contract_rev",
+          "who": "both",
+          "rule": "every frame's `contract_rev` equals this contract's MINOR. A host MUST accept a rev higher than its own and ignore it \u2014 a minor is additive by definition. A differing MAJOR cannot reach a bound host, because binding already refused it"
+        },
+        {
+          "id": "max_frame_bytes_advisory",
+          "who": "host",
+          "rule": "`max_frame_bytes` in the descriptor is a derived READ-SIZING HINT and MUST NOT be used as a validity test. Two sections of one kind are legal, so a frame may legitimately exceed it and must still decode rather than be counted bad_length and resynced away"
+        },
+        {
           "id": "not_co_sampled",
           "who": "host",
-          "rule": "streams are INDEPENDENTLY SAMPLED and share only the timebase. A host MUST locate a stream's samples by that stream's own timestamps and MUST NOT pair samples across streams by index or by arrival order. adio_dig takes its first sample at the epoch origin; rhd_matrix takes its first at the acquisition engine's next timestep boundary, so the offset between two streams' first samples is uniform in [0, one frame period of the slower stream) and is DIFFERENT ON EVERY RUN. It does NOT drift: measured over four independent 2-minute runs the trend was +0.31, -0.34, -0.61 and +0.73 frame periods -- mean +0.02, sign alternating, i.e. read-phase noise around zero, which is what one shared counter predicts and two counters could not produce. Cross-stream alignment is exact integer subtraction of timestamps, and that is the whole reason the timebase is shared"
+          "rule": "streams are INDEPENDENTLY SAMPLED and share only the timebase. A host MUST locate a stream's samples by that stream's own timestamps and MUST NOT pair samples across streams by index or by arrival order. adio_dig ships its first sample at the epoch origin; rhd_matrix ships its first FRAME at the acquisition engine's SECOND timestep boundary -- the first boundary is discarded, because the emitter admits a frame only once a timebase snapshot has retired and none has at the first boundary -- so the offset between the two streams' first samples is uniform in [1, 2) frame periods of the slower stream and is DIFFERENT ON EVERY RUN. A host MUST NOT assume a lower bound of 0: measured at 1 kS/s, adio_dig first stamp 2 ticks against rhd_matrix 104099 on a declared period of 101250, i.e. 1.028 periods on 5 of 5 runs. It does NOT drift: measured over four independent 2-minute runs the trend was +0.31, -0.34, -0.61 and +0.73 frame periods -- mean +0.02, sign alternating, i.e. read-phase noise around zero, which is what one shared counter predicts and two counters could not produce. Cross-stream alignment is exact integer subtraction of timestamps, and that is the whole reason the timebase is shared"
         }
       ],
-      "error_tokens": [
+      "reject_tokens": [
         "crc_err",
         "bad_length",
         "section_words",
@@ -629,12 +909,16 @@
         "first_of_run_dup",
         "desc_words",
         "hdr_words_fits",
-        "body_fits_frame",
-        "body_shape",
+        "body_fits_frame"
+      ],
+      "counters": {
+        "resync_bytes": "bytes skipped while scanning forward for the next magic",
+        "unknown_kind": "sections skipped by section_words because the kind is not in this host's registry",
+        "format_skipped": "frames skipped by frame_words because `format` is not one this host decodes"
+      },
+      "host_reject_tokens": [
         "ambiguous_kind",
-        "resync_bytes",
-        "unknown_kind",
-        "format_skipped"
+        "body_shape"
       ],
       "max_frame_bytes": 88
     },
@@ -647,18 +931,76 @@
   },
   "bindings": {
     "udp": {
-      "binding_version": "0.1",
+      "binding_version": "0.2",
       "discover": "broadcast",
-      "note": "software reference transport (datagram); names are the wire (identity map)."
+      "note": "software reference transport (datagram); names are the wire (identity map).",
+      "rpc": {
+        "encoding": "json",
+        "framing": "one request datagram -> one reply datagram; max 65535 B",
+        "ops": {
+          "discover": {
+            "req": "{op: discover}",
+            "resp": "the identity record + transport/host/port"
+          },
+          "reg_read": {
+            "req": "{op: reg_read, name}",
+            "resp": "{value: u32}"
+          },
+          "reg_write": {
+            "req": "{op: reg_write, name, value}",
+            "resp": "{ok: true}"
+          },
+          "stream_read": {
+            "req": "{op: stream_read, name, max_bytes}",
+            "resp": "0x01 followed by raw frame bytes"
+          },
+          "message": {
+            "req": "{op: message, req: <request envelope>}",
+            "resp": "{resp: <response object>}"
+          }
+        },
+        "errors": "any op may answer `{\"err\": \"<token>\"}` as JSON \u2014 NOT the 0x01-prefixed binary form, which is reserved for a successful stream read. A client json-decodes every non-stream reply, so an error returned in the binary form destroys the token and surfaces as a decode failure.\n",
+        "note": "A datagram caps one reply, so a stream_read reply is clamped to what fits. The host's rule is the same as on any binding: read, decode what arrived, read again if it wanted more.\n"
+      }
     },
     "tcp": {
-      "binding_version": "0.1",
+      "binding_version": "0.2",
       "discover": "broadcast",
-      "note": "Stream transport: it frames its own messages (4-byte big-endian length prefix), which is the difference a future ethernet binding faces. This IS that binding's control path; the ethernet data plane would add a PL-MAC stream socket beside it.\n"
+      "note": "Stream transport: it frames its own messages, which is the difference a future ethernet binding faces. This IS that binding's control path; the ethernet data plane would add a PL-MAC stream socket beside it.\n",
+      "rpc": {
+        "encoding": "json",
+        "framing": "4-byte BIG-ENDIAN length prefix, then that many bytes, in both directions",
+        "ops": "identical to the udp binding's op vocabulary",
+        "note": "no size cap: the stream is framed rather than chunked, so one reply carries any length"
+      }
     },
     "usb3": {
-      "binding_version": "0.1",
+      "binding_version": "0.2",
       "discover": "device-list(serial,model)",
+      "endpoint_grammar": {
+        "forms": [
+          {
+            "syntax": "<kind>:0xNN",
+            "means": "the whole 32-bit register"
+          },
+          {
+            "syntax": "<kind>:0xNN.b",
+            "means": "bit b (width 1); b counts from the LSB"
+          },
+          {
+            "syntax": "<kind>:0xNN[hi:lo]",
+            "means": "bits hi..lo inclusive, value right-justified to lo; hi >= lo"
+          }
+        ],
+        "kinds": [
+          "wireout",
+          "wirein",
+          "triggerin"
+        ],
+        "default_width": 32,
+        "note": "wireout is read-only, wirein is write-only, triggerin is a one-cycle pulse on `.b`"
+      },
+      "read_alignment": 16,
       "reg": {
         "contract_version": "wireout:0x35",
         "caps": "wireout:0x36",
@@ -679,15 +1021,108 @@
         "samples": "okPipeOut:0xa3",
         "digital": "okPipeOut:0xa2"
       },
+      "stream_read_rule": "For each read: take `avail = stream_status_<stream>[15:0]` (words32), compute `bytes = avail * 4`, clamp to whatever the host wants, round DOWN to a multiple of `read_alignment`, and skip the read entirely if the result is 0. Only okBTPipeOut endpoints may be block-read; the kind is in the endpoint string above and MUST be honoured.\n",
       "message": {
         "channel": "vuart",
         "shared_with": "human-console",
         "req_tag": "kdi ",
-        "resp_sentinel": "0x1e"
+        "resp_sentinel": "0x1e",
+        "endpoints": {
+          "status": "wireout:0x30",
+          "tx_pipe": "okPipeOut:0xa1",
+          "rx_data": "wirein:0x0f",
+          "rx_count": "wirein:0x10",
+          "rx_push": "triggerin:0x43.0"
+        },
+        "request": {
+          "line": "kdi <id> <name> <arg>*\\r",
+          "terminator": "\\r",
+          "arg_order": "declared",
+          "arg_encoding": "each value rendered as a bare token, space separated; no key=value, no quoting",
+          "arg_charset": "[A-Za-z0-9_.-]+",
+          "arg_charset_rule": "NORMATIVE, and a host MUST refuse a request whose id, name or any argument does not match, WITHOUT sending a byte. This wire is shared with a human shell: a value containing CR or LF appends an arbitrary `kv` command (the shell is ungated and can write EEPROMs), and one containing the response sentinel forges a reply. This is why \"no shell word is part of the contract\" is enforceable rather than merely stated.\n",
+          "envelope_on_the_wire": "`token` and `confirm` are envelope keys of the abstract request, but this binding's line form carries positional args only. Today's firmware implements no session command, so no envelope key has a wire encoding here yet; a binding that needs one must define it before a session command ships on this transport.\n"
+        },
+        "response": {
+          "framing": "0x1e, then EXACTLY 3 lowercase ASCII hex digits giving the JSON body length, then that many bytes of UTF-8 JSON",
+          "max_body_bytes": 480,
+          "correlate_by": "id",
+          "rules": "A host MUST drain the channel before sending (the console emits banners and prior output on the same wire), MUST scan past frames whose `id` does not match \u2014 a late reply from a previously timed-out command must never be returned as this command's answer \u2014 and MUST treat a body that fails to parse as absent rather than as an error, continuing the scan. A reply too large for `max_body_bytes` is answered `{\"rc\":-7,\"err\":\"response_too_large\"}`. Pair a missing or short reply with the sticky `console_tx_drop` register: set, it means the device's TX buffer dropped bytes and any reply read may be truncated.\n"
+        },
+        "tx_framing": "The device's console TX arrives on `tx_pipe` as self-framing 32-bit words: byte 0 is a count of 0..3, bytes 1..3 are that many payload bytes. A host reads a multiple of `read_alignment` bytes and decodes each word; words with count 0 carry nothing.\n",
+        "rx_framing": "The host pushes ASCII into the console RX FIFO up to 4 bytes at a time: write the bytes little-endian into `rx_data`, the count into `rx_count`, then pulse `rx_push`. Gate each write on `status[31:16]` (RX free bytes) \u2014 the FIFO has no back-pressure of its own.\n"
       }
     }
   },
   "commands": [
+    {
+      "name": "sys.claim",
+      "tier": "public",
+      "safety": "attended",
+      "scope": "session",
+      "args": [],
+      "envelope": [
+        "token"
+      ],
+      "returns": {
+        "ok": "bool"
+      },
+      "errors": [
+        "busy"
+      ],
+      "doc": "Take the device lease. `token` is an opaque caller-chosen string in the envelope, not an arg. A second host is refused with `busy` and MUST NOT proceed \u2014 the board is a single-holder resource and a concurrent opener presents downstream as a gateware regression. `unknown_cmd` means this build has no lease; proceed unclaimed.\n"
+    },
+    {
+      "name": "sys.release",
+      "tier": "public",
+      "safety": "attended",
+      "scope": "session",
+      "args": [],
+      "envelope": [
+        "token"
+      ],
+      "returns": {
+        "ok": "bool"
+      },
+      "doc": "Drop the lease held by `token`. Idempotent; safe to call on a session that never claimed."
+    },
+    {
+      "name": "sys.challenge",
+      "tier": "public",
+      "safety": "ro",
+      "scope": "session",
+      "args": [],
+      "returns": {
+        "nonce": "str",
+        "dna": "str"
+      },
+      "doc": "Begin a field-service unlock: the device returns a fresh nonce bound to its FPGA DNA. RESERVED pending P3b \u2014 the grant canonicalisation and signature scheme are NOT yet published, so a host MUST NOT depend on the shape of what it signs. See docs/device_interface_plan.md \u00a79.\n"
+    },
+    {
+      "name": "sys.unlock",
+      "tier": "public",
+      "safety": "attended",
+      "scope": "session",
+      "args": [
+        {
+          "name": "grant",
+          "type": "obj"
+        },
+        {
+          "name": "sig",
+          "type": "hex"
+        }
+      ],
+      "returns": {
+        "ok": "bool",
+        "tier": "str"
+      },
+      "errors": [
+        "tier_locked",
+        "bad_args"
+      ],
+      "doc": "Present a signed grant to raise the session's tier. RESERVED pending P3b, as above: the grant shape ({tier, nonce, dna}) and its signing bytes are implementation detail today and will be published when the scheme is fixed. The tier comes from the GRANT, never from a separate argument.\n"
+    },
     {
       "name": "sys.hello",
       "tier": "public",

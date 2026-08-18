@@ -1,5 +1,51 @@
 # Changelog
 
+## v0.4.0 — two streams, a self-describing container, and registers a legacy host cannot clobber
+
+**If you built against v0.3, three things moved and one of them was unfixable.**
+
+**KDI's registers moved to `0x11`-`0x13`.** v0.3 placed them at `0x15`-`0x18`, every one of which
+the incumbent acquisition host WRITES for its own purposes — `0x15` is its TTL-output word. A
+legacy host sharing the instrument could therefore stop both KDI streams, and once the sample
+stream also starts acquisition, the same write STARTS it. This was not a hypothetical: it was
+found by checking the addresses against the hosts that actually speak to this board rather than
+against the reference. `0x0f`-`0x13` is the only gap in that map.
+
+Two registers share a word, so **every write must be masked**. A host that writes the whole word
+stops the other stream.
+
+**Streams are independent and separately addressed.** `adio_dig` and `rhd_matrix` emit on their own
+endpoints with their own run bits, lane masks and burst bounds. Starting or stopping one leaves the
+other's capture intact — asserted per-run, not assumed.
+
+**One device-wide timebase.** Both streams stamp from a single counter, so aligning them is exact
+integer subtraction. They are deliberately NOT co-sampled and the contract says so: applying one
+stream's loss oracle across streams is forbidden, because their cadences are co-prime by design.
+
+### The vector bundle is the part to re-read
+
+v0.3 published ONE 64-byte `adio_dig` vector. That vector has `rows == 1`, where a row-major and a
+lane-major decoder produce **identical bytes** — so a decoder that transposes `rhd_matrix`'s 35 rows
+against its lanes passed 100% of the published oracle while emitting plausible neural data at the
+wrong channel index. That is a failure this project shipped once.
+
+The bundle is now six frames plus a streaming case and 20 negatives covering all 11 reject tokens.
+`golden_wide` is the one to look at hardest: it uses descriptor strides and element widths no
+current device emits, so a decoder that compiles in today's stride, today's element widths, or
+faults on an unregistered kind is caught here rather than by a future device.
+
+### Also
+
+- `first_of_run` is an explicit flag, never inferred from `timestamp == 0`. v0.2's rule ("flags[0]
+  implies timestamp 0") is retired: it is only satisfiable if every stream starts at the epoch
+  origin, and streams start independently on a device-wide epoch.
+- Pipe occupancy is in **32-bit words**; `frame_words` is in **16-bit words**. Both units appear in
+  one protocol, so neither can be assumed — a host reading occupancy as 16-bit words reads half the
+  resident data and then decodes a truncated frame.
+- Every read must be a multiple of 16 bytes. A digital frame is 88 B, which is not, so size a
+  bounded burst such that `frames x frame_bytes` is 16-byte aligned or the tail is unreadable until
+  more data arrives.
+
 ## v0.1.1 — CORRECTION: rhd_matrix row order was off by one
 
 **v0.1.0 published a wrong row order. If you built a decoder against it, fix this first.**
