@@ -144,5 +144,5 @@ with every copy.
 ## The contract
 
 This crate implements a published contract you can read without it:
-<https://github.com/Keyvast-Technology/kdi-spec> — descriptor, JSON Schema, golden vectors and a
+<https://github.com/Keyvast-Technology/kdi> — `spec/` holds the descriptor, JSON Schema, golden vectors and a
 manifest. A second implementation is built against that, not against this crate.

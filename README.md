@@ -14,9 +14,14 @@ difference between the two is a bug in the contract, not a feature of Rust. `rs/
 published crate has a home, an issue tracker and readable history; it is a *consumer* of `spec/`
 like any other host would be.
 
-`rs/` is a **one-way mirror** of the source that builds the published crate. Pull requests against
-it cannot be merged as-is — open them anyway if you have found something, and say so; the fix will
-land upstream and appear here on the next release.
+`rs/` is a **one-way mirror** of the source that builds the published crate, and this repository is
+where that crate is **published from** — so what is on crates.io is by construction what you can see
+here, at the commit that published it. Pull requests against `rs/` cannot be merged as-is; open them
+anyway if you have found something, and say so — the fix lands upstream and appears here on the next
+release.
+
+The publish workflow is [`.github/workflows/publish.yml`](.github/workflows/publish.yml), readable
+for the same reason: you should be able to see how the thing you depend on is built.
 
 > **Status: v0.4.0 — format 2 is emitted by shipping gateware and verified on hardware.**
 > The device emits format-2 frames on two independent streams and advertises the `clean_frame`

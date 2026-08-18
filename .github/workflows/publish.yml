@@ -1,0 +1,92 @@
+# Publish the `kdi` crate to crates.io, FROM THIS REPOSITORY.
+#
+# It lives here rather than upstream so that consistency is structural instead of hoped for: the
+# crate is built from exactly the tree you can see at the commit that published it, so crates.io and
+# `rs/` cannot drift. It is also, deliberately, a workflow a customer can read.
+#
+# `rs/` is a ONE-WAY MIRROR written by the private build repo. Do not edit it here -- the next sync
+# overwrites it. Fixes land upstream and appear here on the following release.
+#
+# A crates.io version is PERMANENT: never deletable, only yankable, and its files are served
+# forever. So this never fires on a push or a tag, it defaults to a rehearsal, and the gate below
+# refuses a tarball that leaks or misdeclares. Every check in that gate is a defect that was found
+# in a real tarball, hours before a first publish that would have shipped a bench instrument's
+# serial number and the board vendor's name.
+name: Publish to crates.io
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (must match rs/Cargo.toml exactly)"
+        required: true
+      dry_run:
+        description: "Rehearse only -- package and gate, never upload"
+        type: boolean
+        default: true
+
+concurrency: publish-crate
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The version must be the one in the manifest
+        run: |
+          set -euo pipefail
+          want='${{ inputs.version }}'
+          have=$(grep -m1 '^version' rs/Cargo.toml | cut -d'"' -f2)
+          [ "$want" = "$have" ] || { echo "::error::asked for $want, manifest says $have"; exit 1; }
+          echo "version $have"
+
+      # The device drivers are fetched, never tracked -- four opaque binaries cost more in
+      # comprehension than they save, and they travel in the crates.io tarball instead. They live in
+      # a private release, so this needs a token the public repo does not otherwise require.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: vendor-token
+        with:
+          client-id: ${{ vars.VENDOR_APP_CLIENT_ID }}
+          private-key: ${{ secrets.VENDOR_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: hdl-opalkelly-xem7310
+          permission-contents: read
+
+      - name: Fetch and hash-verify the device drivers
+        env:
+          GH_TOKEN: ${{ steps.vendor-token.outputs.token }}
+        run: tools/vendor_drivers.sh "$PWD/rs/kdi/vendor"
+
+      - name: Test and lint
+        run: |
+          set -euo pipefail
+          cd rs
+          cargo test -p kdi
+          cargo clippy -p kdi --all-targets -- -D warnings
+
+      - name: Package
+        run: cd rs && cargo package -p kdi --allow-dirty
+
+      # THE GATE. Mirrored from the build repo so it runs where the publish happens.
+      - name: Refuse an unpublishable tarball
+        run: python3 tools/check_publishable.py rs/target/package/kdi-${{ inputs.version }}.crate
+
+      - name: Rehearse
+        if: ${{ inputs.dry_run }}
+        run: |
+          cd rs && cargo publish -p kdi --dry-run --allow-dirty
+          echo "::notice::dry run only -- nothing was uploaded"
+
+      - name: Publish (PERMANENT)
+        if: ${{ !inputs.dry_run }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "${CARGO_REGISTRY_TOKEN:-}" ] || { echo "::error::CARGO_REGISTRY_TOKEN is not set"; exit 1; }
+          cd rs && cargo publish -p kdi --allow-dirty
+          echo "::notice::kdi ${{ inputs.version }} is now public and permanent"
